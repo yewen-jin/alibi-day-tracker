@@ -55,6 +55,8 @@ Implemented V3 foundation:
 - note-derived insight extraction into `time_block_insights`;
 - note edits regenerate current insight rows;
 - chat-derived insight extraction into `companion_message_insights`;
+- SQL-backed companion memory context in `lib/memory-context.ts`, combining time blocks, note insights, linked block chat, chat-derived insights, and recent visible messages into one evidence packet;
+- general companion chat and saved-block analysis now use the same memory context layer instead of separate today-only prompt retrieval;
 - chat analysis prioritizes notes, then metadata, then derived insights, then linked/general chat;
 - companion chat is split into a general thread plus one reflective thread per completed time block;
 - block-specific companion threads use the selected block, including its note, as fixed context and do not mutate blocks in v1;
@@ -88,7 +90,7 @@ Server action status:
 | `deleteBlock` | Implemented; deletes user-owned blocks. |
 | `getCalendarData` | Implemented; loads blocks for date ranges. |
 | `getCategories` / `createCategory` | Implemented; default and user-owned categories. |
-| `processCompanionMessage` | Implemented; routes companion chat, timer control, block logging, clarification, notes-first analysis, and reflective block threads. |
+| `processCompanionMessage` | Implemented; routes companion chat, timer control, block logging, clarification, memory-grounded analysis, and reflective block threads. |
 
 AI model routing:
 
@@ -118,7 +120,7 @@ UI status:
 Verification:
 
 - `pnpm build` passes.
-- `pnpm test` passes — unit tests cover note insights, chat insights, dashboard data including daily timeline placement helpers, and block draft utilities (Vitest).
+- `pnpm test` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, and block draft utilities (Vitest).
 - Playwright E2E skeleton exists at `tests/e2e/demo.test.ts`; integration tests for server actions are not yet implemented.
 - Hosted schema was checked through Supabase REST table/column probes.
 - Authenticated browser QA is still needed for note-save, note-edit insight regeneration, custom category creation, chat logging, chat analysis, and dashboard display.
@@ -130,6 +132,9 @@ Known working principle:
 - Derived insight rows are replaceable and traceable.
 - Saved real block notes and demo block notes share the same AI insight path with heuristic fallback when AI is unavailable.
 - Chat insight rows are derived from user messages only and keep narrative patterns separate from time-block evidence.
+- General companion chat and analysis now retrieve SQL-backed memory context from the shared user data model. Default scope is today; user language can expand retrieval to yesterday, the last few days, week, or month; a complete draft uses its explicit time window.
+- Companion clarification now accepts duration values returned by the model as either numbers or numeric strings, and partial time answers produce specific follow-up questions instead of repeating the same generic time/duration prompt.
+- Pending companion drafts no longer hijack every later message. If a new message is ordinary chat instead of a logging answer, the stale draft is resolved and the companion returns to conversation.
 - Block-specific companion threads are reflective only and use compact block context instead of broad retrieval.
 - Public demo data stays in browser `localStorage` until the user imports completed blocks into an authenticated account.
 
@@ -147,7 +152,8 @@ Known working principle:
 - Integration tests for `app/actions/timer.ts` and `app/actions/process-message.ts` are not yet written.
 - Playwright E2E tests are a skeleton only; the timer flow and manual block entry tests need selectors confirmed against the live `/demo` UI.
 - Long notes in block-specific companion context need a cached summary/excerpt strategy before notes become large enough to create token pressure.
-- RAG is not implemented yet. The project first needs cleaner source records and evidence pointers.
+- Memory context is v1 SQL range retrieval only. It is not yet embeddings, semantic search, long-term summarization, or provider-native assistant memory.
+- RAG is not implemented yet. The project first needs cleaner source records, evidence pointers, and a retrieval/chunk layer.
 - Agentic database evolution is not implemented. Future work should let the agent propose schema changes, not mutate production schema directly.
 - Demo AI still needs browser QA for rate/latency behavior and operation accuracy under messy inputs.
 
@@ -199,6 +205,7 @@ Known working principle:
 
 ### Phase 7 - Evidence Model For RAG
 
+- Keep the current SQL-backed memory context as the baseline retrieval path for the companion.
 - Introduce an explicit retrieval/chunk layer only after enough real usage reveals the right retrieval shape.
 - Store source pointers from chunks to notes, note versions, chat messages, time blocks, evidence items, and derived observations.
 - Add embeddings and retrieval only for source-backed evidence.
@@ -239,4 +246,4 @@ Known working principle:
 
 ## Next Step
 
-Run live authenticated QA for the dashboard calendar timeline and chat mirror paths, then build richer week/month summaries that combine notes, metadata, and chat-derived insights while preserving source hierarchy.
+Run live authenticated QA for memory-grounded companion chat across today, yesterday, and "last few days" prompts, then build richer week/month summaries that combine notes, metadata, and chat-derived insights while preserving source hierarchy.

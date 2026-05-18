@@ -18,6 +18,7 @@ Alibi is moving from a simple timer tracker toward a qualitative productivity pa
 - **Notes are the primary evidence source.** Journal-style notes capture the messy reality that simple task-duration tracking loses.
 - **Chat is the elicitation layer.** The agent helps the user reconstruct what happened, name feelings, fill missing details, and log or edit blocks when natural language is easier.
 - **Derived insights are replaceable interpretations.** AI output can summarize and structure, but raw notes and chat remain the truth.
+- **Context belongs to Alibi, not the model vendor.** The app should retrieve and format its own evidence from the database so the companion model can be replaced without losing memory.
 - **Future RAG should retrieve evidence, not vibes.** Any retrieval workflow should cite the original time block, note, chat turn, or derived observation it used.
 
 ## User Model
@@ -151,6 +152,20 @@ Insight generation must use sources in this order:
 4. general `companion_messages` - background narrative and recurring language.
 5. `time_block_insights` and `companion_message_insights` - source-linked derived interpretations for retrieval and summaries, never more authoritative than raw input.
 
+### Current Context Layer
+
+The first companion memory layer is SQL-backed retrieval over the existing user-owned tables. It is not provider-native model memory and not yet vector RAG.
+
+The context builder may retrieve:
+
+- completed `time_blocks` in the relevant range;
+- `time_block_insights` for those blocks;
+- `companion_messages` linked to those blocks;
+- `companion_message_insights` from the same range;
+- the most recent visible thread messages.
+
+Default scope is today. User language can expand context to yesterday, the last few days, week, or month. A complete time-block draft uses its explicit start/end window. This retrieval policy can interpret the user's analysis question, but it must not become a manual parser that writes time blocks.
+
 ### Current Core Tables
 
 `time_blocks` is the primary timeline table. It stores start/end time, duration, task label, category slug/id, hashtags, notes, optional affect fields, marker booleans, and derived `agent_metadata`.
@@ -199,6 +214,8 @@ AI calls should use a split-model strategy through OpenRouter:
 - stronger companion models for user-visible reflection, saved-block analysis, and proactive insight text where tone, restraint, and evidence grounding matter.
 
 The reusable companion voice prompt should stay centralized in code so chat, analysis, and proactive insight copy share the same product voice.
+
+The companion model should receive an Alibi-built memory packet rather than relying on the model provider's chat memory. This keeps the product portable across OpenRouter, ChatGPT, Claude, or future bring-your-own-model flows while preserving the same evidence hierarchy.
 
 It should:
 
