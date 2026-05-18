@@ -63,6 +63,9 @@ Implemented V3 foundation:
 - dashboard notes mirror surfaces note-grounded observations, and chat mirror surfaces message-grounded narrative patterns separately;
 - `/app/calendar` now pairs a compact month view with a selected-day 24-hour timeline, including category-colored blocks and reusable block chat/edit/delete actions;
 - hosted Supabase V3 schema has been applied and REST-verified;
+- database portability phase 1 is started: Kysely + `pg` are installed, `DATABASE_URL` / optional `DATABASE_SSL=true` are the new app-data connection path, and `lib/db/client.ts` defines a server-only typed Postgres client;
+- `lib/auth/session.ts` is the app-owned auth boundary. Supabase Auth still provides login/session, but server routes can now call `getCurrentUser()`, `requireUser()`, or `requireSyncedUser()` instead of directly calling `supabase.auth.getUser()`;
+- `db/migrations/001_initial_app_schema.sql` is the first portable Postgres migration. It introduces `app_users`, replaces app-data foreign keys to `auth.users` with `app_users(id)`, and omits Supabase RLS policies so ownership is enforced in repository queries;
 - pure helpers extracted from `process-message.ts` into `lib/block-draft-utils.ts` (`deriveWindow`, `resolveCategory`, `inferCategoryFromText`, `getDayRange`, `CompanionDraft`) so they are independently testable without the `"use server"` boundary.
 
 ## Current Status
@@ -77,6 +80,9 @@ Database setup:
 - Existing legacy `coach_messages` / `coach_drafts` are preserved by additive migration and copied into the general companion thread.
 - Default category rows are visible through REST.
 - `entries` remains legacy-only for the current app path.
+- Portable Postgres migration path now exists in `db/migrations`. Legacy Supabase SQL files remain as reference/backfill artifacts until the portable schema is fully verified.
+- `/app/dashboard`, `/app/calendar`, `getEntries`, and proactive message reads now use repository modules backed by Kysely and `DATABASE_URL` instead of Supabase `.from(...)`.
+- Timer mutations, companion chat mutations, companion draft/insight writes, and proactive insight generation still use the Supabase data API. Supabase Auth remains intentionally in place.
 
 Server action status:
 
@@ -91,6 +97,20 @@ Server action status:
 | `getCalendarData` | Implemented; loads blocks for date ranges. |
 | `getCategories` / `createCategory` | Implemented; default and user-owned categories. |
 | `processCompanionMessage` | Implemented; routes companion chat, timer control, block logging, clarification, memory-grounded analysis, and reflective block threads. |
+
+Repository status:
+
+| Domain | Status |
+| --- | --- |
+| Auth boundary | Implemented in `lib/auth/session.ts`; Supabase Auth retained, app user upsert available through `syncAppUser` / `requireSyncedUser`. |
+| DB client | Implemented in `lib/db/client.ts`; server-only Kysely Postgres client using `DATABASE_URL` and optional `DATABASE_SSL=true`. |
+| Portable schema | Initial migration added at `db/migrations/001_initial_app_schema.sql`; not yet production cut over. |
+| Time-block reads | Implemented in `lib/repositories/time-blocks.ts` for completed blocks, categories, and block insights. |
+| Companion reads | Implemented in `lib/repositories/companion.ts` for recent message insights and recent user messages. |
+| Legacy entries/proactive messages | Implemented in `lib/repositories/legacy.ts` for entries, unread proactive messages, and mark-read. |
+| Timer writes | Still Supabase data API. |
+| Companion writes | Still Supabase data API. |
+| Insight generation writes | Still Supabase data API. |
 
 AI model routing:
 
@@ -120,8 +140,8 @@ UI status:
 
 Verification:
 
-- `pnpm build` passes.
-- `pnpm test` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, and block draft utilities (Vitest).
+- `npm run build` passes after the Kysely/repository slice. Next.js still warns about multiple lockfiles and inferred workspace root.
+- `npm run test:unit` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, and block draft utilities (Vitest).
 - Playwright E2E skeleton exists at `tests/e2e/demo.test.ts`; integration tests for server actions are not yet implemented.
 - Hosted schema was checked through Supabase REST table/column probes.
 - Authenticated browser QA is still needed for note-save, note-edit insight regeneration, custom category creation, chat logging, chat analysis, and dashboard display.
@@ -157,6 +177,9 @@ Known working principle:
 - RAG is not implemented yet. The project first needs cleaner source records, evidence pointers, and a retrieval/chunk layer.
 - Agentic database evolution is not implemented. Future work should let the agent propose schema changes, not mutate production schema directly.
 - Demo AI still needs browser QA for rate/latency behavior and operation accuracy under messy inputs.
+- Database portability is only partially implemented. Any authenticated route/action already migrated to repositories now requires `DATABASE_URL`; timer, companion, and insight write paths still depend on Supabase app-data tables.
+- Repository-level ownership tests are not written yet. Future tests should cover user-scoped SQL predicates and app-user upsert behavior.
+- The portable migration has not yet been run against a clean external Postgres database or compared against production Supabase data.
 
 ## Roadmap
 
@@ -166,6 +189,16 @@ Known working principle:
 - Smoke test `/demo` localStorage persistence, timer stop/edit, manual block save, chat-created block, resume, clear demo, sign-up/sign-in, and authenticated import.
 - Keep `/app/docs` as a wiki, not a feature list. It should explain what Alibi is, how it works, how to write useful notes, and how to prompt chat well.
 - Fix any remaining UI copy that treats notes as a minor optional field instead of primary evidence.
+
+### Phase 1b - Database Portability Cutover
+
+- Configure local and staging `DATABASE_URL` against a plain Postgres database and run `db/migrations/001_initial_app_schema.sql`.
+- Add repository tests for user-scoped reads/writes and app-user upsert behavior.
+- Move timer actions from Supabase `.from(...)` to repositories while preserving existing server action return shapes.
+- Move companion conversation/message/draft/insight writes from Supabase `.from(...)` to repositories.
+- Move proactive insight generation off Supabase data API.
+- Keep Supabase Auth as the temporary identity provider until app-data portability is fully stable.
+- Remove remaining Supabase app-data usage only after authenticated timer, dashboard, calendar, and companion QA passes on `DATABASE_URL`.
 
 ### Phase 2 - Better Note Capture
 
@@ -247,4 +280,4 @@ Known working principle:
 
 ## Next Step
 
-Run live authenticated QA for memory-grounded companion chat across today, yesterday, and "last few days" prompts, then build richer week/month summaries that combine notes, metadata, and chat-derived insights while preserving source hierarchy.
+Configure a local or staging `DATABASE_URL`, run the portable migration, and smoke test `/app/dashboard`, `/app/calendar`, entries, and proactive messages against plain Postgres before moving timer and companion write actions into repositories.

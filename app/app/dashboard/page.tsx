@@ -1,65 +1,34 @@
 import { redirect } from "next/navigation"
 import { deriveCompanionMessageInsightRecord } from "@/lib/chat-insights"
-import { createClient } from "@/lib/supabase/server"
+import { getCurrentUser } from "@/lib/auth/session"
+import {
+  listRecentCompanionMessageInsights,
+  listRecentUserCompanionMessages,
+} from "@/lib/repositories/companion"
+import {
+  listCompletedTimeBlocks,
+  listTimeBlockCategories,
+  listTimeBlockInsightsForBlocks,
+} from "@/lib/repositories/time-blocks"
 import type {
   CompanionConversation,
-  CompanionMessage,
   CompanionMessageInsight,
-  TimeBlock,
-  TimeBlockCategoryRecord,
-  TimeBlockInsight,
 } from "@/lib/types"
 import { TopNav } from "@/components/top-nav"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
 
   if (!user) redirect("/")
 
-  const { data: timeBlocks } = await supabase
-    .from("time_blocks")
-    .select("*")
-    .eq("user_id", user.id)
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: false })
-
-  const safeBlocks = (timeBlocks ?? []) as TimeBlock[]
+  const safeBlocks = await listCompletedTimeBlocks(user.id)
   const blockIds = safeBlocks.map((block) => block.id)
-  const { data: insights } = blockIds.length
-    ? await supabase
-        .from("time_block_insights")
-        .select("*")
-        .eq("user_id", user.id)
-        .in("time_block_id", blockIds)
-    : { data: [] }
-  const safeInsights = (insights ?? []) as TimeBlockInsight[]
-  const { data: chatInsights } = await supabase
-    .from("companion_message_insights")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(80)
-  const safeChatInsights = (chatInsights ?? []) as CompanionMessageInsight[]
-  const { data: categories } = await supabase
-    .from("time_block_categories")
-    .select("*")
-    .or(`user_id.is.null,user_id.eq.${user.id}`)
-    .order("is_default", { ascending: false })
-    .order("name", { ascending: true })
-  const safeCategories = (categories ?? []) as TimeBlockCategoryRecord[]
-  const { data: userMessages } = await supabase
-    .from("companion_messages")
-    .select("*")
-    .eq("user_id", user.id)
-    .eq("role", "user")
-    .order("created_at", { ascending: false })
-    .limit(80)
-  const messageBackfillInsights = ((userMessages ?? []) as CompanionMessage[])
+  const safeInsights = await listTimeBlockInsightsForBlocks(user.id, blockIds)
+  const safeChatInsights = await listRecentCompanionMessageInsights(user.id)
+  const safeCategories = await listTimeBlockCategories(user.id)
+  const userMessages = await listRecentUserCompanionMessages(user.id)
+  const messageBackfillInsights = userMessages
     .map((message) =>
       deriveCompanionMessageInsightRecord(
         message,

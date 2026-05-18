@@ -1,13 +1,10 @@
 import { redirect } from "next/navigation"
 import { getCompanionThread } from "@/app/actions/process-message"
-import { createClient } from "@/lib/supabase/server"
+import { getCurrentUser } from "@/lib/auth/session"
 import { TimerTrackerApp } from "@/components/timer-tracker-app"
 
 export default async function AppPage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
 
   if (!user) {
     redirect("/auth/login")

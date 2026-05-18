@@ -1,33 +1,20 @@
 import { redirect } from "next/navigation"
 import { getCompanionThread } from "@/app/actions/process-message"
-import { createClient } from "@/lib/supabase/server"
-import type { TimeBlock, TimeBlockCategoryRecord } from "@/lib/types"
+import { getCurrentUser } from "@/lib/auth/session"
+import {
+  listCompletedTimeBlocks,
+  listTimeBlockCategories,
+} from "@/lib/repositories/time-blocks"
 import { TopNav } from "@/components/top-nav"
 import { CalendarWorkspace } from "@/components/calendar-workspace"
 
 export default async function CalendarPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
 
   if (!user) redirect("/auth/login")
 
-  const { data: timeBlocks } = await supabase
-    .from("time_blocks")
-    .select("*")
-    .eq("user_id", user.id)
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: false })
-
-  const { data: categories } = await supabase
-    .from("time_block_categories")
-    .select("*")
-    .or(`user_id.is.null,user_id.eq.${user.id}`)
-    .order("is_default", { ascending: false })
-    .order("name", { ascending: true })
-
+  const timeBlocks = await listCompletedTimeBlocks(user.id)
+  const categories = await listTimeBlockCategories(user.id)
   const companionThread = await getCompanionThread()
 
   return (
@@ -50,8 +37,8 @@ export default async function CalendarPage() {
         </header>
 
         <CalendarWorkspace
-          initialBlocks={(timeBlocks ?? []) as TimeBlock[]}
-          initialCategories={(categories ?? []) as TimeBlockCategoryRecord[]}
+          initialBlocks={timeBlocks}
+          initialCategories={categories}
           initialCompanionThread={companionThread ?? undefined}
         />
 

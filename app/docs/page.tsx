@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { TopNav } from "@/components/top-nav"
-import { createClient } from "@/lib/supabase/server"
+import { getCurrentUser } from "@/lib/auth/session"
 
 interface WikiSection {
   id: string
@@ -170,10 +170,7 @@ const NAV_LINKS = [
 ]
 
 export default async function DocsPage() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
 
   return (
     <main className="alibi-page relative w-full">
