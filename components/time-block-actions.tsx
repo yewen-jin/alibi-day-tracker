@@ -124,6 +124,7 @@ export function CompanionChatPanel({
   pending,
   onOpenGeneral,
   onSubmit,
+  onClose,
 }: {
   threadKind: "general" | "time_block";
   threadTitle: string | null;
@@ -131,6 +132,7 @@ export function CompanionChatPanel({
   pending: boolean;
   onOpenGeneral: () => Promise<void>;
   onSubmit: (text: string) => Promise<void>;
+  onClose?: () => void;
 }) {
   const [value, setValue] = useState("");
   const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -169,7 +171,7 @@ export function CompanionChatPanel({
               : "companion chat"}
           </h2>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
           {threadKind === "time_block" ? (
             <button
               type="button"
@@ -185,6 +187,17 @@ export function CompanionChatPanel({
               <MessageCircle className="h-4 w-4" />
               main chat
             </div>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="close chat"
+              title="close"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-pink hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
           )}
         </div>
       </div>

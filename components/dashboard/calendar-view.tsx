@@ -22,6 +22,7 @@ interface CalendarViewProps {
   blocks: TimeBlock[]
   categories?: TimeBlockCategoryRecord[]
   detailSlot?: React.ReactNode
+  detailMode?: "default" | "expanded"
   onSelectedBlockChange?: (block: TimeBlock | null) => void
 }
 
@@ -46,6 +47,7 @@ export function CalendarView({
   blocks,
   categories = FALLBACK_CATEGORIES,
   detailSlot,
+  detailMode = "default",
   onSelectedBlockChange,
 }: CalendarViewProps) {
   const todayKey = toDateKey(new Date())
@@ -129,7 +131,7 @@ export function CalendarView({
         className={cn(
           "grid gap-5",
           hasSelectedBlockDetail
-            ? "lg:grid-cols-[minmax(16rem,0.72fr)_minmax(0,1.45fr)]"
+            ? "lg:grid-cols-[minmax(15rem,0.72fr)_minmax(0,1.58fr)]"
             : "lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]",
         )}
       >
@@ -249,6 +251,7 @@ export function CalendarView({
           categories={categories}
           onSelectBlock={setSelectedBlockId}
           detailSlot={hasSelectedBlockDetail ? detailSlot : null}
+          detailMode={detailMode}
         />
       </div>
     </section>
@@ -264,6 +267,7 @@ function DailyTimelinePane({
   categories,
   onSelectBlock,
   detailSlot,
+  detailMode,
 }: {
   dateKey: string
   bucket: DayBucket
@@ -273,6 +277,7 @@ function DailyTimelinePane({
   categories: TimeBlockCategoryRecord[]
   onSelectBlock: (id: string) => void
   detailSlot?: React.ReactNode
+  detailMode: "default" | "expanded"
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -304,7 +309,9 @@ function DailyTimelinePane({
         className={cn(
           "grid gap-4",
           selectedBlock
-            ? "xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.64fr)]"
+            ? detailMode === "expanded"
+              ? "xl:grid-cols-[minmax(14rem,0.75fr)_minmax(20rem,1fr)]"
+              : "xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.64fr)]"
             : "xl:grid-cols-1",
         )}
       >

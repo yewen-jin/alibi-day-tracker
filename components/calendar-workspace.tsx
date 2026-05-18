@@ -35,6 +35,8 @@ interface CalendarWorkspaceProps {
   initialCompanionThread?: CompanionThreadState;
 }
 
+type ActivePanel = "edit" | "chat" | null;
+
 export function CalendarWorkspace({
   initialBlocks,
   initialCategories,
@@ -47,6 +49,7 @@ export function CalendarWorkspace({
   );
   const [selectedBlock, setSelectedBlock] = useState<TimeBlock | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [thread, setThread] = useState<CompanionThreadState | null>(
     initialCompanionThread ?? null,
   );
@@ -133,6 +136,7 @@ export function CalendarWorkspace({
       if (result.type === "saved") {
         replaceBlock(result.timeBlock);
         setEditor(null);
+        setActivePanel(null);
         await refreshCategories();
         router.refresh();
         return;
@@ -156,6 +160,7 @@ export function CalendarWorkspace({
         setBlocks((current) => current.filter((item) => item.id !== block.id));
         if (selectedBlock?.id === block.id) setSelectedBlock(null);
         if (editor?.block?.id === block.id) setEditor(null);
+        setActivePanel(null);
         router.refresh();
         return;
       }
@@ -190,6 +195,7 @@ export function CalendarWorkspace({
         });
         if (nextThread) {
           showThread(nextThread);
+          setActivePanel("chat");
         } else {
           setError("couldn't open that companion thread.");
         }
@@ -262,24 +268,61 @@ export function CalendarWorkspace({
 
   const handleCalendarSelectedBlockChange = useCallback(
     (block: TimeBlock | null) => {
+      if (block && selectedBlock?.id !== block.id) {
+        setEditor(null);
+        setActivePanel(null);
+      }
       setSelectedBlock(block);
       if (!block) {
         setEditor(null);
+        setActivePanel(null);
       }
     },
-    [],
+    [selectedBlock?.id],
   );
 
-  const detailSlot = selectedBlock ? (
-    <TimeBlockItem
-      block={selectedBlock}
-      categories={categories}
-      onChatAbout={handleChatAbout}
-      onEdit={(block) => setEditor(createEditorState(block))}
-      onDelete={handleDelete}
-      pending={isPending}
-    />
-  ) : null;
+  const handleEditBlock = useCallback((block: TimeBlock) => {
+    setEditor(createEditorState(block));
+    setActivePanel("edit");
+  }, []);
+
+  const handleCloseEditor = useCallback((nextEditor: EditorState | null) => {
+    setEditor(nextEditor);
+    if (!nextEditor) {
+      setActivePanel(null);
+    }
+  }, []);
+
+  const detailSlot =
+    selectedBlock && activePanel === "edit" && editor ? (
+      <BlockEditor
+        editor={editor}
+        categories={categories}
+        setEditor={handleCloseEditor}
+        onSave={handleSave}
+        onDelete={editor.block ? () => handleDelete(editor.block!) : undefined}
+        pending={isPending}
+      />
+    ) : selectedBlock && activePanel === "chat" ? (
+      <CompanionChatPanel
+        threadKind={thread?.conversation.kind ?? "general"}
+        threadTitle={thread?.conversation.title ?? null}
+        messages={chatMessages}
+        pending={isChatPending}
+        onOpenGeneral={handleOpenGeneralThread}
+        onSubmit={handleCompanionMessage}
+        onClose={() => setActivePanel(null)}
+      />
+    ) : selectedBlock ? (
+      <TimeBlockItem
+        block={selectedBlock}
+        categories={categories}
+        onChatAbout={handleChatAbout}
+        onEdit={handleEditBlock}
+        onDelete={handleDelete}
+        pending={isPending}
+      />
+    ) : null;
 
   return (
     <div className="space-y-5">
@@ -294,41 +337,9 @@ export function CalendarWorkspace({
         blocks={blocks}
         categories={categories}
         detailSlot={detailSlot}
+        detailMode={selectedBlock ? "expanded" : "default"}
         onSelectedBlockChange={handleCalendarSelectedBlockChange}
       />
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        {editor ? (
-          <BlockEditor
-            editor={editor}
-            categories={categories}
-            setEditor={setEditor}
-            onSave={handleSave}
-            onDelete={
-              editor.block ? () => handleDelete(editor.block!) : undefined
-            }
-            pending={isPending}
-          />
-        ) : (
-          <section className="alibi-card p-5">
-            <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-              selected block
-            </p>
-            <h2 className="mt-1 text-xl font-black text-alibi-blue">
-              no editor open
-            </h2>
-          </section>
-        )}
-
-        <CompanionChatPanel
-          threadKind={thread?.conversation.kind ?? "general"}
-          threadTitle={thread?.conversation.title ?? null}
-          messages={chatMessages}
-          pending={isChatPending}
-          onOpenGeneral={handleOpenGeneralThread}
-          onSubmit={handleCompanionMessage}
-        />
-      </div>
     </div>
   );
 }
