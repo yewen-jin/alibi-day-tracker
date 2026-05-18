@@ -842,6 +842,7 @@ export async function resumeBlock(input: ResumeBlockInput): Promise<ResumeBlockR
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
+  revalidatePath("/app/calendar")
 
   return {
     type: "resumed",
@@ -1007,6 +1008,7 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
+  revalidatePath("/app/calendar")
 
   return {
     type: "stopped",
@@ -1108,6 +1110,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
 
     revalidatePath("/app")
     revalidatePath("/app/dashboard")
+    revalidatePath("/app/calendar")
 
     return {
       type: "saved",
@@ -1138,6 +1141,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
+  revalidatePath("/app/calendar")
 
   return {
     type: "saved",
@@ -1182,6 +1186,7 @@ export async function deleteBlock(input: DeleteBlockInput): Promise<DeleteBlockR
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
+  revalidatePath("/app/calendar")
 
   return {
     type: "deleted",

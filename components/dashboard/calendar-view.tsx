@@ -16,10 +16,14 @@ import {
   formatTime,
   getCategoryMeta,
 } from "@/lib/time-block-display"
+import { cn } from "@/lib/utils"
 
 interface CalendarViewProps {
   blocks: TimeBlock[]
   categories?: TimeBlockCategoryRecord[]
+  detailSlot?: React.ReactNode
+  detailMode?: "default" | "expanded"
+  onSelectedBlockChange?: (block: TimeBlock | null) => void
 }
 
 const MONTHS = [
@@ -42,6 +46,9 @@ const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
 export function CalendarView({
   blocks,
   categories = FALLBACK_CATEGORIES,
+  detailSlot,
+  detailMode = "default",
+  onSelectedBlockChange,
 }: CalendarViewProps) {
   const todayKey = toDateKey(new Date())
   const buckets = useMemo(() => bucketByDay(blocks), [blocks])
@@ -84,9 +91,14 @@ export function CalendarView({
     [selectedBlocks]
   )
   const selectedBlock =
-    selectedBlocks.find((block) => block.id === selectedBlockId) ??
-    selectedBlocks[0] ??
-    null
+    selectedBlockId === null
+      ? null
+      : selectedBlocks.find((block) => block.id === selectedBlockId) ?? null
+  const hasSelectedBlockDetail = selectedBlock !== null
+
+  useEffect(() => {
+    onSelectedBlockChange?.(selectedBlock)
+  }, [onSelectedBlockChange, selectedBlock])
 
   const goPrev = () => {
     const nextYear = month === 0 ? year - 1 : year
@@ -115,7 +127,14 @@ export function CalendarView({
 
   return (
     <section className="alibi-card p-5">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+      <div
+        className={cn(
+          "grid gap-5",
+          hasSelectedBlockDetail
+            ? "lg:grid-cols-[minmax(15rem,0.72fr)_minmax(0,1.58fr)]"
+            : "lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]",
+        )}
+      >
         <div>
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-baseline gap-3">
@@ -231,6 +250,8 @@ export function CalendarView({
           selectedBlockId={selectedBlockId}
           categories={categories}
           onSelectBlock={setSelectedBlockId}
+          detailSlot={hasSelectedBlockDetail ? detailSlot : null}
+          detailMode={detailMode}
         />
       </div>
     </section>
@@ -245,6 +266,8 @@ function DailyTimelinePane({
   selectedBlockId,
   categories,
   onSelectBlock,
+  detailSlot,
+  detailMode,
 }: {
   dateKey: string
   bucket: DayBucket
@@ -253,6 +276,8 @@ function DailyTimelinePane({
   selectedBlockId: string | null
   categories: TimeBlockCategoryRecord[]
   onSelectBlock: (id: string) => void
+  detailSlot?: React.ReactNode
+  detailMode: "default" | "expanded"
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -280,7 +305,16 @@ function DailyTimelinePane({
         </span>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(13rem,0.62fr)]">
+      <div
+        className={cn(
+          "grid gap-4",
+          selectedBlock
+            ? detailMode === "expanded"
+              ? "xl:grid-cols-[minmax(14rem,0.75fr)_minmax(20rem,1fr)]"
+              : "xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.64fr)]"
+            : "xl:grid-cols-1",
+        )}
+      >
         <div ref={scrollRef} className="alibi-inset max-h-[34rem] overflow-y-auto p-3">
           {items.length === 0 ? (
             <div className="flex min-h-72 items-center justify-center px-4 text-center text-sm font-semibold leading-6 text-alibi-teal">
@@ -324,7 +358,10 @@ function DailyTimelinePane({
           )}
         </div>
 
-        <BlockDetail block={selectedBlock} categories={categories} />
+        {selectedBlock &&
+          (detailSlot ?? (
+            <BlockDetail block={selectedBlock} categories={categories} />
+          ))}
       </div>
     </div>
   )

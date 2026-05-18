@@ -7,6 +7,7 @@ The current product is timer-first and notes-first:
 - Work is stored as dated `time_blocks`.
 - Notes are the human-authored source of truth: what happened, what got in the way, how it felt, what changed, and what the user noticed.
 - Chat is a secondary input surface that can start/stop timers, log completed blocks, ask clarifying questions, and answer from saved evidence.
+- Calendar is a timeline workspace for scanning days, selecting completed blocks inline, and opening block-specific chat/edit/delete actions without leaving the calendar.
 - Dashboard insights are grounded in saved blocks, note-derived signals, and visible evidence trails.
 
 ---
@@ -70,6 +71,12 @@ The dashboard shows:
 
 The pattern signals panel counts both explicit block markers and note-derived insight signals.
 
+### 6. Calendar workspace
+
+The authenticated calendar route combines a compact month view with a selected-day 24-hour timeline. First load shows the month and daily timeline only. Selecting a timeline block opens an inline detail panel with the shared time-block layout and chat/edit/delete actions; selecting another day clears the detail panel and restores the larger month/day view.
+
+The calendar companion panel hydrates the same main companion chat as `/app`. Using `chat about this` switches to the selected block's reflective thread, and `main chat` returns to the general thread.
+
 ---
 
 ## Routes
@@ -78,6 +85,7 @@ The pattern signals panel counts both explicit block markers and note-derived in
 |---|---|
 | `/` | Public landing page |
 | `/app` | Authenticated timer, block editor, daily block list, and chat panel |
+| `/app/calendar` | Month calendar, selected-day timeline, inline block detail, and calendar companion chat |
 | `/app/dashboard` | Dashboard summaries, pattern markers, and notes mirror |
 | `/app/docs` | Feature guide |
 | `/auth/login` | Email/password login |
@@ -279,6 +287,7 @@ alibi-day-tracker/
 │   ├── globals.css
 │   ├── app/
 │   │   ├── page.tsx
+│   │   ├── calendar/page.tsx
 │   │   ├── dashboard/page.tsx
 │   │   └── docs/page.tsx
 │   ├── auth/
@@ -290,6 +299,8 @@ alibi-day-tracker/
 │       └── proactive-messages.ts
 ├── components/
 │   ├── timer-tracker-app.tsx
+│   ├── calendar-workspace.tsx
+│   ├── time-block-actions.tsx
 │   ├── top-nav.tsx
 │   ├── proactive-bubble.tsx
 │   ├── companion-response.tsx
@@ -371,7 +382,7 @@ Apply [supabase-v2.sql](./supabase-v2.sql) in the Supabase SQL editor. If your h
 
 ```bash
 pnpm build      # type-check + static build
-pnpm test       # 37 unit tests (Vitest)
+pnpm test       # 65 unit tests (Vitest)
 pnpm test:e2e   # Playwright E2E against localhost:3000 (requires dev server)
 ```
 
@@ -391,8 +402,10 @@ Implemented:
 - note version preservation
 - note-derived insight extraction
 - dashboard notes mirror
+- calendar workspace with month view, selected-day timeline, inline block detail, and shared companion chat hydration
+- tracker today calendar shortcut button linking to `/app/calendar`
 - pattern marker dashboard that merges explicit markers and note-derived signals
-- unit test layer: 37 tests across `lib/note-insights.ts`, `lib/dashboard-data.ts`, and `lib/block-draft-utils.ts`
+- unit test layer: 65 tests across note insights, chat insights, memory context, dashboard data, and block draft utilities
 
 Pending:
 

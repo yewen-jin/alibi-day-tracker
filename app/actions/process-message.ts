@@ -7,7 +7,6 @@ import {
   CATEGORIES,
   categoryTextForDraft,
   deriveWindow,
-  getDayRange,
   inferCategoryFromText,
   resolveCategory,
   slugifyCategoryName,
@@ -18,9 +17,12 @@ import type {
 } from "@/lib/block-draft-utils";
 import { alibiCompanionGuide } from "@/lib/companion-voice";
 import { generateCompanionMessageInsightRecord } from "@/lib/chat-insights";
-import { formatInsightForPrompt } from "@/lib/note-insights";
+import {
+  buildCompanionMemoryContext,
+  formatBlockForMemory,
+} from "@/lib/memory-context";
 import { createClient } from "@/lib/supabase/server";
-import { getCalendarData, saveBlock, startTimer, stopTimer } from "./timer";
+import { saveBlock, startTimer, stopTimer } from "./timer";
 import type {
   ActiveTimer,
   CompanionConversation,
@@ -35,7 +37,6 @@ import type {
   SaveBlockInput,
   TimeBlock,
   TimeBlockCategory,
-  TimeBlockInsight,
 } from "@/lib/types";
 const MOODS = [
   "joyful",
@@ -59,20 +60,20 @@ const SATISFACTION_LEVELS = [
 ] as const satisfies readonly Satisfaction[];
 
 const companionDraftSchema = z.object({
-  task_name: z.string().nullable(),
-  category: z.string().nullable(),
-  hashtags: z.array(z.string()),
-  notes: z.string().nullable(),
-  started_at: z.string().nullable(),
-  ended_at: z.string().nullable(),
-  duration_minutes: z.number().nullable(),
-  mood: z.enum(MOODS).nullable(),
-  effort_level: z.enum(EFFORT_LEVELS).nullable(),
-  satisfaction: z.enum(SATISFACTION_LEVELS).nullable(),
-  avoidance_marker: z.boolean(),
-  hyperfocus_marker: z.boolean(),
-  guilt_marker: z.boolean(),
-  novelty_marker: z.boolean(),
+  task_name: z.string().nullable().default(null),
+  category: z.string().nullable().default(null),
+  hashtags: z.array(z.string()).default([]),
+  notes: z.string().nullable().default(null),
+  started_at: z.string().nullable().default(null),
+  ended_at: z.string().nullable().default(null),
+  duration_minutes: z.union([z.number(), z.string()]).nullable().default(null),
+  mood: z.enum(MOODS).nullable().default(null),
+  effort_level: z.enum(EFFORT_LEVELS).nullable().default(null),
+  satisfaction: z.enum(SATISFACTION_LEVELS).nullable().default(null),
+  avoidance_marker: z.boolean().default(false),
+  hyperfocus_marker: z.boolean().default(false),
+  guilt_marker: z.boolean().default(false),
+  novelty_marker: z.boolean().default(false),
 });
 
 const routerSchema = companionDraftSchema.extend({
@@ -212,11 +213,20 @@ function cleanIso(value: unknown): string | null {
 }
 
 function cleanDuration(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+  const numeric =
+    typeof value === "string" && value.trim()
+      ? Number(value.trim())
+      : value;
+
+  if (
+    typeof numeric !== "number" ||
+    !Number.isFinite(numeric) ||
+    numeric <= 0
+  ) {
     return null;
   }
 
-  return Math.round(value);
+  return Math.round(numeric);
 }
 
 function mergeDraft(
@@ -318,25 +328,6 @@ function draftToSaveInput(
   };
 }
 
-function getAnalysisRange(draft: CompanionDraft | null | undefined) {
-  if (draft?.started_at && draft.ended_at) {
-    const startedAt = new Date(draft.started_at);
-    const endedAt = new Date(draft.ended_at);
-
-    if (
-      !Number.isNaN(startedAt.getTime()) &&
-      endedAt.getTime() > startedAt.getTime()
-    ) {
-      return {
-        start: startedAt.toISOString(),
-        end: endedAt.toISOString(),
-      };
-    }
-  }
-
-  return getDayRange();
-}
-
 function snapshotTimeBlock(block: TimeBlock): CompanionTimeBlockContext {
   return {
     id: block.id,
@@ -358,31 +349,7 @@ function snapshotTimeBlock(block: TimeBlock): CompanionTimeBlockContext {
 }
 
 function formatBlockForPrompt(block: TimeBlock | CompanionTimeBlockContext) {
-  const duration = block.duration_seconds
-    ? `${Math.round(block.duration_seconds / 60)} min`
-    : "duration unknown";
-  const startedAt = new Date(block.started_at).toLocaleString("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  const task = block.task_name ?? "unnamed block";
-  const category = block.category
-    ? block.category.replace("_", " ")
-    : "uncategorized";
-  const tags = block.hashtags?.length ? ` #${block.hashtags.join(" #")}` : "";
-  const notes = block.notes ? `\n  note: ${block.notes}` : "";
-  const metadata = [
-    block.mood ? `mood=${block.mood}` : "",
-    block.effort_level ? `effort=${block.effort_level}` : "",
-    block.satisfaction ? `satisfaction=${block.satisfaction}` : "",
-    block.avoidance_marker ? "avoidance_marker=true" : "",
-    block.hyperfocus_marker ? "hyperfocus_marker=true" : "",
-    block.guilt_marker ? "guilt_marker=true" : "",
-    block.novelty_marker ? "novelty_marker=true" : "",
-  ].filter(Boolean);
-  const meta = metadata.length ? `\n  metadata: ${metadata.join(", ")}` : "";
-
-  return `- ${startedAt}: ${task} (${category}, ${duration})${tags}${notes}${meta}`;
+  return formatBlockForMemory(block);
 }
 
 function formatMessageForPrompt(message: CompanionMessage) {
@@ -391,10 +358,9 @@ function formatMessageForPrompt(message: CompanionMessage) {
 
 function looksLikeLogAttempt(
   text: string,
-  draft: CompanionDraft | null | undefined,
   routed: RouterOutput,
 ) {
-  if (draft) {
+  if (routed.intent === "log_block" || routed.intent === "clarify") {
     return true;
   }
 
@@ -410,6 +376,45 @@ function looksLikeLogAttempt(
   return /\b(log|logged|record|add|save|spent|worked on|finished|completed|did|from \d{1,2}|for \d+)\b/i.test(
     text,
   );
+}
+
+function draftHasClarificationInfo(draft: CompanionDraft | null | undefined) {
+  if (!draft) {
+    return false;
+  }
+
+  return Boolean(
+    draft.task_name?.trim() ||
+      draft.category ||
+      draft.hashtags.length > 0 ||
+      draft.notes?.trim() ||
+      draft.started_at ||
+      draft.ended_at ||
+      draft.duration_minutes ||
+      draft.mood ||
+      draft.effort_level ||
+      draft.satisfaction ||
+      draft.avoidance_marker ||
+      draft.hyperfocus_marker ||
+      draft.guilt_marker ||
+      draft.novelty_marker,
+  );
+}
+
+function shouldContinuePendingDraft(
+  pendingDraft: CompanionDraft | null,
+  routed: RouterOutput,
+  clarificationDraft: CompanionDraft | null,
+) {
+  if (!pendingDraft) {
+    return false;
+  }
+
+  if (routed.intent === "log_block" || routed.intent === "clarify") {
+    return true;
+  }
+
+  return draftHasClarificationInfo(clarificationDraft);
 }
 
 async function fetchTimeBlockForUser(
@@ -429,28 +434,6 @@ async function fetchTimeBlockForUser(
   }
 
   return data as TimeBlock;
-}
-
-async function fetchNoteInsightsForBlocks(
-  supabase: Supabase,
-  userId: string,
-  blockIds: string[],
-) {
-  if (blockIds.length === 0) {
-    return [] as TimeBlockInsight[];
-  }
-
-  const { data, error } = await supabase
-    .from("time_block_insights")
-    .select("*")
-    .eq("user_id", userId)
-    .in("time_block_id", blockIds);
-
-  if (error) {
-    return [] as TimeBlockInsight[];
-  }
-
-  return (data ?? []) as TimeBlockInsight[];
 }
 
 async function fetchCompanionMessagesForConversation(
@@ -805,7 +788,7 @@ async function routeMessage(
         "",
         "Valid intents: companion_chat, log_block, start_timer, stop_timer, analyse_blocks, clarify.",
         "Use companion_chat for ordinary conversation, emotional check-ins, uncertainty, venting, or anything that is not clearly a request to save completed work.",
-        "Use log_block only when the user is recording completed work or gives a clear completed-work statement with timing/category details.",
+        "Use log_block when the user is trying to record, add, save, or log completed work, even if details are missing.",
         "Use start_timer or stop_timer for explicit timer control.",
         "Use analyse_blocks when they ask what they did, how long they spent, patterns, or reassurance from saved records.",
         "Use clarify only when the new message answers a prior clarification but is still incomplete.",
@@ -831,6 +814,7 @@ async function routeMessage(
         "",
         "Rules:",
         "- Resolve relative dates and times against the current date and timezone.",
+        "- Return started_at and ended_at as complete ISO datetimes, never partial clock strings.",
         "- If the user says a range like '2 to 3:30', return both started_at and ended_at.",
         "- If they give a duration only, return duration_minutes.",
         "- Do not invent a time window.",
@@ -854,6 +838,59 @@ async function routeMessage(
     return normalizeRouterOutput(output, text);
   } catch {
     return normalizeRouterOutput(null, text);
+  }
+}
+
+async function completeDraftFromClarification(
+  text: string,
+  draft: CompanionDraft,
+  timezone: string | null | undefined,
+  recentMessages: CompanionMessage[],
+): Promise<CompanionDraft> {
+  try {
+    const { output } = await generateText({
+      model: fastModel,
+      output: Output.object({ schema: companionDraftSchema }),
+      prompt: [
+        "Complete an existing Alibi time-block draft from the user's latest clarification answer.",
+        "The assistant previously asked for missing task, time, duration, category, or notes.",
+        "Extract only details present in the user's latest answer. Use null or empty arrays for details not present.",
+        "Resolve relative dates and times against the current timestamp and timezone.",
+        "Return started_at and ended_at as complete ISO datetimes, never partial clock strings.",
+        "If the answer gives only a duration like '2 hours', '90 minutes', or 'half an hour', return duration_minutes.",
+        "If the answer gives a time range like '8 to 9', '8pm-9:30pm', or 'last night 8 to 9', return started_at and ended_at.",
+        "If am/pm is omitted but the user says night or evening, interpret the time as pm.",
+        "Do not invent missing fields.",
+        "",
+        `Current timestamp: ${new Date().toISOString()}`,
+        `User timezone: ${timezone || "unknown"}`,
+        `Existing draft: ${JSON.stringify(draft)}`,
+        "Recent visible messages:",
+        recentMessages.length
+          ? recentMessages.map(formatMessageForPrompt).join("\n")
+          : "(none)",
+        `Latest user answer: ${text}`,
+      ].join("\n"),
+    });
+
+    return normalizeRouterOutput({ intent: "clarify", ...output }, "").draft;
+  } catch {
+    return {
+      task_name: null,
+      category: null,
+      hashtags: [],
+      notes: null,
+      started_at: null,
+      ended_at: null,
+      duration_minutes: null,
+      mood: null,
+      effort_level: null,
+      satisfaction: null,
+      avoidance_marker: false,
+      hyperfocus_marker: false,
+      guilt_marker: false,
+      novelty_marker: false,
+    };
   }
 }
 
@@ -888,52 +925,69 @@ async function makeAck(
   }
 }
 
-async function analyseBlocks(
-  message: string,
-  draft: CompanionDraft | null | undefined,
-  recentMessages: CompanionMessage[],
-) {
-  const range = getAnalysisRange(draft);
-  const result = await getCalendarData(range);
+async function makeSavedBlockReply({
+  action,
+  timeBlock,
+  userMessage,
+}: {
+  action: "logged" | "stopped";
+  timeBlock: TimeBlock;
+  userMessage: string;
+}) {
+  const fallback =
+    action === "stopped"
+      ? `saved: ${timeBlock.task_name ?? "time block"}.`
+      : `logged: ${timeBlock.task_name ?? "time block"}.`;
 
-  if (result.type === "error") {
-    return result.message;
+  try {
+    const { text } = await generateText({
+      model: companionModel,
+      system: [
+        "You are Alibi. The time block has already been saved in the database.",
+        alibiCompanionGuide,
+        "Write a short response that confirms the saved block and reflects one useful detail from the saved record.",
+        "Use only the saved time block below and the user's original message.",
+        "Do not claim any extra edits, tags, notes, categories, or times beyond the saved row.",
+        "Stay under 55 words. Use lowercase. No emojis. No productivity advice.",
+      ].join("\n"),
+      prompt: [
+        `Action: ${action}`,
+        `User message: ${userMessage}`,
+        "Saved time block:",
+        formatBlockForPrompt(timeBlock),
+      ].join("\n"),
+    });
+
+    const cleaned = text.trim();
+    return cleaned || fallback;
+  } catch {
+    return fallback;
   }
+}
 
-  const blocks = result.timeBlocks;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const blockIds = blocks.map((block) => block.id);
-  const [noteInsights, linkedMessagesResult] = user
-    ? await Promise.all([
-        fetchNoteInsightsForBlocks(supabase, user.id, blockIds),
-        supabase
-          .from("companion_messages")
-          .select("*")
-          .eq("user_id", user.id)
-          .in("related_time_block_id", blockIds)
-          .order("created_at", { ascending: true }),
-      ])
-    : [[], { data: [], error: null }];
-  const insightsByBlock = new Map(
-    noteInsights.map((insight) => [insight.time_block_id, insight]),
-  );
-  const linkedMessages = linkedMessagesResult.error
-    ? []
-    : ((linkedMessagesResult.data ?? []) as CompanionMessage[]);
-  const context = blocks.length
-    ? blocks
-        .map((block) => {
-          const insight = insightsByBlock.get(block.id);
-          const derived = insight
-            ? `\n  note-derived insight: ${formatInsightForPrompt(insight)}`
-            : "";
-          return `${formatBlockForPrompt(block)}${derived}`;
-        })
-        .join("\n")
-    : "(no time blocks saved today)";
+async function analyseBlocks({
+  supabase,
+  userId,
+  conversation,
+  message,
+  draft,
+  recentMessages,
+}: {
+  supabase: Supabase;
+  userId: string;
+  conversation: CompanionConversation;
+  message: string;
+  draft: CompanionDraft | null | undefined;
+  recentMessages: CompanionMessage[];
+}) {
+  const memory = await buildCompanionMemoryContext({
+    supabase,
+    userId,
+    conversation,
+    message,
+    draft,
+    recentMessages,
+  });
 
   try {
     const { text } = await generateText({
@@ -941,52 +995,59 @@ async function analyseBlocks(
       system: [
         "You are Alibi: the friend who remembers the user's day so they don't have to defend it to themselves.",
         alibiCompanionGuide,
-        "Answer using ONLY the provided context.",
-        "Use evidence in this order: time block notes, time block metadata, note-derived insights, linked chat, then recent general chat.",
-        "When describing a pattern, cite the note/time evidence that supports it.",
-        "General chat can add tone or continuity, but it must not override a time block note unless the user explicitly says the block record is wrong.",
+        "Answer using ONLY the provided memory context.",
+        "Use evidence in this order: time block notes, time block metadata, note-derived insights, linked chat, chat-derived insights, then recent visible chat.",
+        "When describing a pattern, cite the note, time, or chat evidence that supports it.",
+        "Chat-derived context can name intention, friction, emotion, useful drift, and mismatch, but it must not override a time block note unless the user explicitly says the block record is wrong.",
         "Stay under 90 words.",
         "Do not mention entries. Do not invent unsaved work. Do not give productivity advice.",
       ].join("\n"),
       prompt: [
         `User asked: ${message}`,
         `Pending draft, if any: ${JSON.stringify(draft ?? null)}`,
-        "Recent visible messages:",
-        recentMessages.length
-          ? recentMessages.map(formatMessageForPrompt).join("\n")
-          : "(none)",
         "",
-        "Saved time_blocks in range:",
-        context,
-        "",
-        "Linked companion messages for those blocks:",
-        linkedMessages.length
-          ? linkedMessages.map(formatMessageForPrompt).join("\n")
-          : "(none)",
+        "Memory context:",
+        memory.evidenceText,
       ].join("\n"),
     });
 
-    return text.trim() || "nothing on the record yet today.";
+    return text.trim() || `nothing on the record for ${memory.range.label}.`;
   } catch {
-    if (blocks.length === 0) {
-      return "nothing on the record yet today.";
+    if (memory.blocks.length === 0 && memory.chatInsights.length === 0) {
+      return `nothing on the record for ${memory.range.label}.`;
     }
 
-    return `today has ${blocks.length} saved block${blocks.length === 1 ? "" : "s"}: ${blocks
-      .map((block) => block.task_name ?? "unnamed block")
-      .join(", ")}.`;
+    return `${memory.range.label} has ${memory.blocks.length} saved block${
+      memory.blocks.length === 1 ? "" : "s"
+    } and ${memory.chatInsights.length} chat-derived observation${
+      memory.chatInsights.length === 1 ? "" : "s"
+    }.`;
   }
 }
 
-async function companionChat(
-  message: string,
-  recentMessages: CompanionMessage[],
-) {
-  const result = await getCalendarData(getDayRange());
-  const context =
-    result.type === "loaded" && result.timeBlocks.length
-      ? result.timeBlocks.map(formatBlockForPrompt).join("\n")
-      : "(no saved time blocks today)";
+async function companionChat({
+  supabase,
+  userId,
+  conversation,
+  message,
+  draft,
+  recentMessages,
+}: {
+  supabase: Supabase;
+  userId: string;
+  conversation: CompanionConversation;
+  message: string;
+  draft: CompanionDraft | null | undefined;
+  recentMessages: CompanionMessage[];
+}) {
+  const memory = await buildCompanionMemoryContext({
+    supabase,
+    userId,
+    conversation,
+    message,
+    draft,
+    recentMessages,
+  });
 
   try {
     const { text } = await generateText({
@@ -995,21 +1056,18 @@ async function companionChat(
         "You are Alibi: a conversational witness for the user's day.",
         alibiCompanionGuide,
         "Do not behave like a form or parser.",
+        "Never claim you saved, logged, added, edited, or changed a time block. Only tool-result acknowledgments can say that.",
         "Do not ask for exact time or duration unless the user is clearly trying to log completed work.",
         "If the user is vague, respond conversationally first; you may ask one gentle open question.",
-        "Use saved time_blocks only as context, not as a script.",
-        "If you refer to saved evidence, treat block notes as the strongest source and chat history as secondary context.",
+        "Use the memory context as grounding, not as a script.",
+        "Treat block notes as the strongest source; use chat-derived insights for broader patterns around intention, friction, emotion, useful drift, and mismatch.",
         "Stay under 70 words.",
       ].join("\n"),
       prompt: [
         `User message: ${message}`,
-        "Recent visible messages:",
-        recentMessages.length
-          ? recentMessages.map(formatMessageForPrompt).join("\n")
-          : "(none)",
         "",
-        "Saved time_blocks today:",
-        context,
+        "Memory context:",
+        memory.evidenceText,
       ].join("\n"),
     });
 
@@ -1062,6 +1120,18 @@ async function timeBlockCompanionChat(
 
 function clarificationQuestion(draft: CompanionDraft) {
   if (!deriveWindow(draft)) {
+    if (draft.started_at && !draft.ended_at && !draft.duration_minutes) {
+      return "when did it end, or how long did it take?";
+    }
+
+    if (draft.ended_at && !draft.started_at && !draft.duration_minutes) {
+      return "when did it start, or how long did it take?";
+    }
+
+    if (draft.duration_minutes && !draft.started_at && !draft.ended_at) {
+      return "when did that happen?";
+    }
+
     return "what time was that, or about how long did it take?";
   }
 
@@ -1221,7 +1291,23 @@ export async function processCompanionMessage(
     timezone,
     recentMessages,
   );
-  const mergedDraft = mergeDraft(pendingDraft, routed);
+  const clarificationDraft = pendingDraft
+    ? await completeDraftFromClarification(
+        trimmed,
+        pendingDraft,
+        timezone,
+        recentMessages,
+      )
+    : null;
+  const mergedDraft = mergeDraft(
+    pendingDraft,
+    clarificationDraft ? mergeDraft(routed, clarificationDraft) : routed,
+  );
+  const continuePendingDraft = shouldContinuePendingDraft(
+    pendingDraft,
+    routed,
+    clarificationDraft,
+  );
 
   if (routed.intent === "start_timer") {
     const result = await startTimer();
@@ -1273,7 +1359,11 @@ export async function processCompanionMessage(
 
     if (result.type === "stopped") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
-      const ack = await makeAck("stopped", mergedDraft.task_name ?? "timer");
+      const ack = await makeSavedBlockReply({
+        action: "stopped",
+        timeBlock: result.timeBlock,
+        userMessage: trimmed,
+      });
       return finishWithAssistant(
         {
           type: "timer_stopped",
@@ -1297,7 +1387,14 @@ export async function processCompanionMessage(
   }
 
   if (routed.intent === "analyse_blocks") {
-    const message = await analyseBlocks(trimmed, mergedDraft, recentMessages);
+    const message = await analyseBlocks({
+      supabase,
+      userId: user.id,
+      conversation,
+      message: trimmed,
+      draft: mergedDraft,
+      recentMessages,
+    });
     return finishWithAssistant(
       {
         type: "analysis",
@@ -1308,11 +1405,19 @@ export async function processCompanionMessage(
     );
   }
 
-  if (
-    routed.intent === "companion_chat" ||
-    !looksLikeLogAttempt(trimmed, pendingDraft, routed)
-  ) {
-    const message = await companionChat(trimmed, recentMessages);
+  if (!looksLikeLogAttempt(trimmed, routed) && !continuePendingDraft) {
+    if (pendingDraft) {
+      await resolvePendingDraft(supabase, user.id, conversation.id);
+    }
+
+    const message = await companionChat({
+      supabase,
+      userId: user.id,
+      conversation,
+      message: trimmed,
+      draft: continuePendingDraft ? mergedDraft : null,
+      recentMessages,
+    });
     return finishWithAssistant(
       {
         type: "conversation",
@@ -1374,7 +1479,11 @@ export async function processCompanionMessage(
 
   if (result.type === "saved") {
     await resolvePendingDraft(supabase, user.id, conversation.id);
-    const ack = await makeAck("logged", mergedDraft.task_name ?? "time block");
+    const ack = await makeSavedBlockReply({
+      action: "logged",
+      timeBlock: result.timeBlock,
+      userMessage: trimmed,
+    });
     return finishWithAssistant(
       {
         type: "logged",

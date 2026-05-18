@@ -18,6 +18,7 @@ Alibi is moving from a simple timer tracker toward a qualitative productivity pa
 - **Notes are the primary evidence source.** Journal-style notes capture the messy reality that simple task-duration tracking loses.
 - **Chat is the elicitation layer.** The agent helps the user reconstruct what happened, name feelings, fill missing details, and log or edit blocks when natural language is easier.
 - **Derived insights are replaceable interpretations.** AI output can summarize and structure, but raw notes and chat remain the truth.
+- **Context belongs to Alibi, not the model vendor.** The app should retrieve and format its own evidence from the database so the companion model can be replaced without losing memory.
 - **Future RAG should retrieve evidence, not vibes.** Any retrieval workflow should cite the original time block, note, chat turn, or derived observation it used.
 
 ## User Model
@@ -121,12 +122,16 @@ The agent must not guess missing time windows or silently invent categories when
 
 The timeline interface should make days, gaps, and rhythms visible without treating empty time as failure.
 
-The dashboard calendar shows two linked views:
+The authenticated calendar workspace shows two linked views:
 
 - a compact month calendar that makes block density and empty days visible;
 - a selected-day 24-hour timeline that places completed blocks by local start/end time and colors them by category.
 
-Selecting a day updates the daily timeline. Selecting a block shows a read-only detail view with time range, duration, category, task name, notes, and hashtags. The daily timeline is evidence display only in the current phase; editing, deleting, resuming, and block-specific chat remain app-page workflows.
+Selecting a day updates the daily timeline, clears any selected block detail/editor state, and restores the larger month-plus-day layout. First load should show only the month view and selected-day timeline, not an already-open block detail panel.
+
+Selecting a timeline block opens an inline detail panel in the calendar workspace and narrows the month/timeline area to make room for it. The detail panel uses the same reusable time-block detail component as the tracker: time range and duration appear first, available actions appear next using flexbox, and category/task/notes/hashtags appear below. On wide tracker rows, time and actions may sit on one line; in compact calendar detail panels, actions can wrap under the time while remaining above the content.
+
+Calendar block details support chat, edit, and delete. Block-specific chat opens the selected block's reflective companion thread; returning to main chat restores the general companion thread. Resume remains tracker-only.
 
 The mirror/insight interface should surface observations such as:
 
@@ -150,6 +155,20 @@ Insight generation must use sources in this order:
 3. linked `companion_messages` - clarification and emotional context around a block.
 4. general `companion_messages` - background narrative and recurring language.
 5. `time_block_insights` and `companion_message_insights` - source-linked derived interpretations for retrieval and summaries, never more authoritative than raw input.
+
+### Current Context Layer
+
+The first companion memory layer is SQL-backed retrieval over the existing user-owned tables. It is not provider-native model memory and not yet vector RAG.
+
+The context builder may retrieve:
+
+- completed `time_blocks` in the relevant range;
+- `time_block_insights` for those blocks;
+- `companion_messages` linked to those blocks;
+- `companion_message_insights` from the same range;
+- the most recent visible thread messages.
+
+Default scope is today. User language can expand context to yesterday, the last few days, week, or month. A complete time-block draft uses its explicit start/end window. This retrieval policy can interpret the user's analysis question, but it must not become a manual parser that writes time blocks.
 
 ### Current Core Tables
 
@@ -199,6 +218,8 @@ AI calls should use a split-model strategy through OpenRouter:
 - stronger companion models for user-visible reflection, saved-block analysis, and proactive insight text where tone, restraint, and evidence grounding matter.
 
 The reusable companion voice prompt should stay centralized in code so chat, analysis, and proactive insight copy share the same product voice.
+
+The companion model should receive an Alibi-built memory packet rather than relying on the model provider's chat memory. This keeps the product portable across OpenRouter, ChatGPT, Claude, or future bring-your-own-model flows while preserving the same evidence hierarchy.
 
 It should:
 
