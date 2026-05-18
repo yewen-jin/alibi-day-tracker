@@ -3,13 +3,14 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { BookOpen, Clock3, LayoutGrid, LogOut } from "lucide-react"
+import { BookOpen, CalendarDays, Clock3, LayoutGrid, LogOut } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
   { href: "/app", label: "tracker", icon: Clock3 },
   { href: "/app/dashboard", label: "dashboard", icon: LayoutGrid },
+  { href: "/app/calendar", label: "calendar", icon: CalendarDays },
   { href: "/docs", label: "docs", icon: BookOpen },
 ]
 

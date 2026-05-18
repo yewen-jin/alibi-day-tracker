@@ -61,7 +61,7 @@ Implemented V3 foundation:
 - companion chat is split into a general thread plus one reflective thread per completed time block;
 - block-specific companion threads use the selected block, including its note, as fixed context and do not mutate blocks in v1;
 - dashboard notes mirror surfaces note-grounded observations, and chat mirror surfaces message-grounded narrative patterns separately;
-- dashboard calendar now pairs a compact month view with a selected-day 24-hour timeline, including category-colored blocks and read-only block detail;
+- `/app/calendar` now pairs a compact month view with a selected-day 24-hour timeline, including category-colored blocks and reusable block chat/edit/delete actions;
 - hosted Supabase V3 schema has been applied and REST-verified;
 - pure helpers extracted from `process-message.ts` into `lib/block-draft-utils.ts` (`deriveWindow`, `resolveCategory`, `inferCategoryFromText`, `getDayRange`, `CompanionDraft`) so they are independently testable without the `"use server"` boundary.
 
@@ -102,11 +102,12 @@ AI model routing:
 
 UI status:
 
-- `/app` has timer, post-stop/manual block editor, daily add-block button, latest-block resume, chat panel, and simple daily block list.
-- Daily block rows include `chat about this`, which opens or reopens the block's reflective companion thread.
+- `/app` has timer, post-stop/manual block editor, daily add-block button, a calendar shortcut button, latest-block resume, chat panel, and simple daily block list.
+- Daily block rows include `chat about this`, which opens or reopens the block's reflective companion thread. Shared time-block detail rows place time/duration first, actions beside it when space allows, and content below so tracker rows and compact calendar detail panels use the same responsive flex layout.
 - The resume button is removed from the DOM while a timer is active; when no timer is active, only the latest completed block can be resumed.
-- `/app/dashboard` has totals, a month calendar linked to a selected-day timeline, rhythm/category views, pattern markers, notes mirror, and chat mirror.
-- The dashboard daily timeline is read-only: completed blocks are positioned by local start/end time, colored by category, and selectable for detail without exposing edit/delete/resume/chat controls.
+- `/app/dashboard` has totals, pattern markers, notes mirror, and chat mirror.
+- `/app/calendar` is the timeline-first workspace: completed blocks are positioned by local start/end time, colored by category, selectable for inline detail, and support the same chat/edit/delete controls as tracker block rows. First load shows only the month view plus selected-day timeline; selecting a timeline block opens the inline detail panel and narrows the month/timeline area, while selecting a day clears detail/editor state and restores the larger month/day view. Resume stays tracker-only.
+- `/app/calendar` hydrates the same general companion thread as `/app` on first render. Block-specific chat still switches to that block's reflective thread, and `main chat` returns to the general thread.
 - `/app/docs` is now a wiki-style guide explaining what Alibi is, how the evidence model works, how to write useful notes, how to use general and block-specific companion chat, and where the V3/RAG direction is going.
 - `/` now describes the notes-first product, existing feature set, and future RAG ambition instead of embedding a fake chat demo.
 - `/demo` provides an unauthenticated localStorage-backed workspace with tracker/chat and dashboard views, timer, manual blocks, custom categories, block-specific threads, edit/delete, latest-block resume, note/chat insights, and a sign-up CTA.
@@ -140,7 +141,7 @@ Known working principle:
 
 ## Current Gaps
 
-- Weekly and monthly timeline analysis views remain pending beyond the current dashboard month calendar plus selected-day timeline.
+- Weekly and monthly timeline analysis views remain pending beyond the current calendar month view plus selected-day timeline.
 - External calendar/todo/agenda overlays are not implemented yet. Future work should explore Google Calendar or other calendar APIs/MCP connectors so scheduled events and tasks can appear alongside Alibi time blocks.
 - Period analysis exists but is still shallow; week/month summaries need deterministic aggregation and stronger evidence trails.
 - Notes mirror and chat mirror are initial vertical slices, not a full longitudinal productivity pattern engine.
@@ -242,7 +243,7 @@ Known working principle:
 6. Ask chat to log a completed block; it asks for missing time/task/category before saving.
 7. Ask "what patterns do you see today?" and get a note-grounded response.
 8. Open `/app/dashboard` and see evidence-backed notes mirror observations.
-9. Use the dashboard calendar to pick a day, scan the 24-hour timeline, and select a colored block to inspect its saved detail.
+9. Open `/app/calendar`, pick a day, scan the 24-hour timeline, select a block for inline detail, and use chat/edit/delete on the saved block.
 
 ## Next Step
 

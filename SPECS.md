@@ -122,12 +122,16 @@ The agent must not guess missing time windows or silently invent categories when
 
 The timeline interface should make days, gaps, and rhythms visible without treating empty time as failure.
 
-The dashboard calendar shows two linked views:
+The authenticated calendar workspace shows two linked views:
 
 - a compact month calendar that makes block density and empty days visible;
 - a selected-day 24-hour timeline that places completed blocks by local start/end time and colors them by category.
 
-Selecting a day updates the daily timeline. Selecting a block shows a read-only detail view with time range, duration, category, task name, notes, and hashtags. The daily timeline is evidence display only in the current phase; editing, deleting, resuming, and block-specific chat remain app-page workflows.
+Selecting a day updates the daily timeline, clears any selected block detail/editor state, and restores the larger month-plus-day layout. First load should show only the month view and selected-day timeline, not an already-open block detail panel.
+
+Selecting a timeline block opens an inline detail panel in the calendar workspace and narrows the month/timeline area to make room for it. The detail panel uses the same reusable time-block detail component as the tracker: time range and duration appear first, available actions appear next using flexbox, and category/task/notes/hashtags appear below. On wide tracker rows, time and actions may sit on one line; in compact calendar detail panels, actions can wrap under the time while remaining above the content.
+
+Calendar block details support chat, edit, and delete. Block-specific chat opens the selected block's reflective companion thread; returning to main chat restores the general companion thread. Resume remains tracker-only.
 
 The mirror/insight interface should surface observations such as:
 
