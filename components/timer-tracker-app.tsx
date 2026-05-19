@@ -7,6 +7,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import dynamic from "next/dynamic";
 import {
   Clock,
   Loader2,
@@ -35,18 +36,15 @@ import type {
   TimeBlockCategoryRecord,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { TopNav } from "./top-nav";
+import { DailyBlocks as SharedDailyBlocks } from "@/components/time-block-list";
 import {
-  BlockEditor as SharedBlockEditor,
-  CompanionChatPanel as SharedCompanionChatPanel,
-  DailyBlocks as SharedDailyBlocks,
   companionMessageToChatMessage as sharedCompanionMessageToChatMessage,
   createEditorState as createSharedEditorState,
   createManualEditorState as createSharedManualEditorState,
   resolveEditorCategory,
   type ChatMessage,
   type EditorState,
-} from "@/components/time-block-actions";
+} from "@/components/time-block-helpers";
 import {
   clearDemoSession,
   readDemoSession,
@@ -64,20 +62,33 @@ import {
 } from "@/lib/time-block-display";
 
 interface TimerTrackerAppProps {
-  userEmail: string | null;
+  initialActiveTimer: ActiveTimer | null;
+  initialCategories: TimeBlockCategoryRecord[];
   initialCompanionThread?: CompanionThreadState;
 }
 
+const SharedBlockEditor = dynamic(() =>
+  import("@/components/time-block-actions").then((mod) => mod.BlockEditor),
+);
+const SharedCompanionChatPanel = dynamic(() =>
+  import("@/components/time-block-actions").then(
+    (mod) => mod.CompanionChatPanel,
+  ),
+);
+
 export function TimerTrackerApp({
-  userEmail,
+  initialActiveTimer,
+  initialCategories,
   initialCompanionThread,
 }: TimerTrackerAppProps) {
-  const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(null);
+  const [activeTimer, setActiveTimer] =
+    useState<ActiveTimer | null>(initialActiveTimer);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [categories, setCategories] =
-    useState<TimeBlockCategoryRecord[]>(FALLBACK_CATEGORIES);
+    useState<TimeBlockCategoryRecord[]>(
+      initialCategories.length > 0 ? initialCategories : FALLBACK_CATEGORIES,
+    );
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [now, setNow] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -97,7 +108,6 @@ export function TimerTrackerApp({
   const [isChatPending, startChatTransition] = useTransition();
 
   const today = useMemo(() => getTodayRange(), []);
-  const elapsed = getElapsedSeconds(activeTimer, now);
 
   const loadTracker = useCallback(async () => {
     setError(null);
@@ -145,11 +155,6 @@ export function TimerTrackerApp({
   }, [loadTracker]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     const demoSession = readDemoSession();
     const importableBlocks =
       demoSession?.blocks.filter(
@@ -181,7 +186,6 @@ export function TimerTrackerApp({
 
       if (result.type === "started" || result.type === "already_running") {
         setActiveTimer(result.activeTimer);
-        setNow(Date.now());
         return;
       }
 
@@ -324,7 +328,6 @@ export function TimerTrackerApp({
 
       if (result.type === "resumed" || result.type === "already_running") {
         setActiveTimer(result.activeTimer);
-        setNow(Date.now());
         await refreshBlocks();
         return;
       }
@@ -487,7 +490,6 @@ export function TimerTrackerApp({
           result.type === "timer_already_running"
         ) {
           setActiveTimer(result.activeTimer);
-          setNow(Date.now());
           return;
         }
 
@@ -530,10 +532,7 @@ export function TimerTrackerApp({
   );
 
   return (
-    <main className="alibi-page px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <TopNav userEmail={userEmail} />
-
+    <>
         {demoImportBlocks.length > 0 && (
           <section className="alibi-banner-info">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -579,84 +578,17 @@ export function TimerTrackerApp({
 
         <section className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
           <div className="flex flex-col gap-5">
-            <section className="alibi-card-pop relative overflow-hidden p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-                    active timer
-                  </p>
-                  <h1 className="mt-2 text-4xl font-black tracking-normal text-alibi-blue sm:text-5xl">
-                    {formatElapsed(elapsed)}
-                  </h1>
-                </div>
-                <div
-                  className={cn(
-                    "flex h-14 w-14 items-center justify-center rounded-2xl border",
-                    activeTimer
-                      ? "border-alibi-pink/25 bg-alibi-pink/15 text-alibi-pink"
-                      : "border-alibi-teal/20 bg-alibi-teal/10 text-alibi-teal",
-                  )}
-                >
-                  <Clock className="h-5 w-5" />
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center gap-3">
-                {activeTimer ? (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    disabled={isPending}
-                    className="alibi-button-stop inline-flex h-11 min-w-32 items-center justify-center gap-2 px-4 text-sm font-black"
-                  >
-                    {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Square className="h-4 w-4" />
-                    )}
-                    stop
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStart}
-                    disabled={isPending || loading}
-                    className="alibi-button-primary inline-flex h-11 min-w-32 items-center justify-center gap-2 text-sm"
-                  >
-                    {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    start
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoading(true);
-                    loadTracker().finally(() => setLoading(false));
-                  }}
-                  disabled={isPending || loading}
-                  aria-label="refresh timer and blocks"
-                  title="refresh"
-                  className="alibi-button-secondary inline-flex h-11 w-11 items-center justify-center"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-
-              <p className="relative mt-4 text-sm font-medium leading-6 text-alibi-teal">
-                {activeTimer
-                  ? `running since ${formatTime(activeTimer.started_at)}`
-                  : "start when you begin, stop when the block is real."}
-              </p>
-            </section>
+            <ActiveTimerCard
+              activeTimer={activeTimer}
+              loading={loading}
+              pending={isPending}
+              onStart={handleStart}
+              onStop={handleStop}
+              onRefresh={() => {
+                setLoading(true);
+                loadTracker().finally(() => setLoading(false));
+              }}
+            />
 
             {error && (
               <div
@@ -706,7 +638,108 @@ export function TimerTrackerApp({
             pending={isPending}
           />
         </section>
+    </>
+  );
+}
+
+function ActiveTimerCard({
+  activeTimer,
+  loading,
+  pending,
+  onStart,
+  onStop,
+  onRefresh,
+}: {
+  activeTimer: ActiveTimer | null;
+  loading: boolean;
+  pending: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  onRefresh: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const elapsed = getElapsedSeconds(activeTimer, now);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <section className="alibi-card-pop relative overflow-hidden p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
+            active timer
+          </p>
+          <h1 className="mt-2 text-4xl font-black tracking-normal text-alibi-blue sm:text-5xl">
+            {formatElapsed(elapsed)}
+          </h1>
+        </div>
+        <div
+          className={cn(
+            "flex h-14 w-14 items-center justify-center rounded-2xl border",
+            activeTimer
+              ? "border-alibi-pink/25 bg-alibi-pink/15 text-alibi-pink"
+              : "border-alibi-teal/20 bg-alibi-teal/10 text-alibi-teal",
+          )}
+        >
+          <Clock className="h-5 w-5" />
+        </div>
       </div>
-    </main>
+
+      <div className="mt-5 flex items-center gap-3">
+        {activeTimer ? (
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={pending}
+            className="alibi-button-stop inline-flex h-11 min-w-32 items-center justify-center gap-2 px-4 text-sm font-black"
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
+            stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={pending || loading}
+            className="alibi-button-primary inline-flex h-11 min-w-32 items-center justify-center gap-2 text-sm"
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            start
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={pending || loading}
+          aria-label="refresh timer and blocks"
+          title="refresh"
+          className="alibi-button-secondary inline-flex h-11 w-11 items-center justify-center"
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+
+      <p className="relative mt-4 text-sm font-medium leading-6 text-alibi-teal">
+        {activeTimer
+          ? `running since ${formatTime(activeTimer.started_at)}`
+          : "start when you begin, stop when the block is real."}
+      </p>
+    </section>
   );
 }

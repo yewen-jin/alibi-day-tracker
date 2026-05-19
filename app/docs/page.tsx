@@ -175,7 +175,11 @@ export default async function DocsPage() {
   return (
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1180px] flex-col gap-6 p-6 sm:p-8">
-        {user ? <TopNav userEmail={user.email ?? null} /> : <PublicDocsNav />}
+        {user ? (
+          <TopNav userEmail={user.email ?? null} activeHref="/docs" />
+        ) : (
+          <PublicDocsNav />
+        )}
 
         <header className="px-1 sm:px-2">
           <div>

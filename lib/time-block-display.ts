@@ -290,6 +290,20 @@ export function getTodayRange() {
   };
 }
 
+export function getMonthRange(date = new Date()) {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+
+  return {
+    start,
+    end,
+    input: {
+      start: start.toISOString(),
+      end: end.toISOString(),
+    },
+  };
+}
+
 export function parseHashtags(value: string) {
   return value
     .split(/[\s,]+/)

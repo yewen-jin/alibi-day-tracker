@@ -290,7 +290,7 @@ export function Alibi({ userEmail }: AlibiProps) {
     <main className="relative h-screen w-full overflow-hidden text-[#2A1F14]">
       {/* Page padding 32px, two-column 40/60 with 24px gap, max 1280px */}
       <div className="mx-auto flex h-full max-w-[1280px] flex-col gap-4 p-6">
-        <TopNav userEmail={userEmail} />
+        <TopNav userEmail={userEmail} activeHref="/app" />
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-[40fr_60fr]">
           {/* ─────────────────── LEFT — CHAT ─────────────────── */}
           <section

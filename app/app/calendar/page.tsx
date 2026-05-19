@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation"
 import { getCompanionThread } from "@/app/actions/process-message"
-import { getCurrentUser } from "@/lib/auth/session"
+import { getCurrentUser, syncAppUser } from "@/lib/auth/session"
 import {
-  listCompletedTimeBlocks,
+  listCompletedTimeBlocksInRange,
   listTimeBlockCategories,
 } from "@/lib/repositories/time-blocks"
+import { getMonthRange } from "@/lib/time-block-display"
 import { TopNav } from "@/components/top-nav"
 import { CalendarWorkspace } from "@/components/calendar-workspace"
 
@@ -13,14 +14,19 @@ export default async function CalendarPage() {
 
   if (!user) redirect("/auth/login")
 
-  const timeBlocks = await listCompletedTimeBlocks(user.id)
-  const categories = await listTimeBlockCategories(user.id)
-  const companionThread = await getCompanionThread()
+  await syncAppUser(user)
+
+  const month = getMonthRange()
+  const [timeBlocks, categories, companionThread] = await Promise.all([
+    listCompletedTimeBlocksInRange(user.id, month.input.start, month.input.end),
+    listTimeBlockCategories(user.id),
+    getCompanionThread(),
+  ])
 
   return (
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-6 p-8">
-        <TopNav userEmail={user.email ?? null} />
+        <TopNav userEmail={user.email ?? null} activeHref="/app/calendar" />
 
         <header className="px-2 sm:px-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

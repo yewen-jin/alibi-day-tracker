@@ -10,6 +10,7 @@ import {
   Updateable,
 } from "kysely";
 import { Pool, types as pgTypes } from "pg";
+import type { AppUserRole } from "@/lib/types";
 
 type Timestamp = ColumnType<string, string | Date, string | Date>;
 type NullableTimestamp = ColumnType<string | null, string | Date | null, string | Date | null>;
@@ -26,6 +27,7 @@ interface AppUsersTable {
   id: string;
   email: string | null;
   auth_provider: string;
+  role: Generated<AppUserRole>;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
@@ -206,22 +208,60 @@ let db: Kysely<Database> | null = null;
 pgTypes.setTypeParser(1114, (value) => value);
 pgTypes.setTypeParser(1184, (value) => value);
 
+function getConnectionString() {
+  return (
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_URL ??
+    process.env.POSTGRES_PRISMA_URL ??
+    process.env.POSTGRES_URL_NON_POOLING
+  );
+}
+
+function getSslConfig(connectionString: string) {
+  if (process.env.DATABASE_SSL === "false") {
+    return undefined;
+  }
+
+  const requiresSsl =
+    process.env.DATABASE_SSL === "true" ||
+    /[?&]sslmode=(require|prefer|verify-ca|verify-full)(?:&|$)/.test(
+      connectionString,
+    );
+
+  return requiresSsl ? { rejectUnauthorized: false } : undefined;
+}
+
+function getPoolConnectionString(connectionString: string, hasSslConfig: boolean) {
+  if (!hasSslConfig) {
+    return connectionString;
+  }
+
+  try {
+    const url = new URL(connectionString);
+    url.searchParams.delete("sslmode");
+    return url.toString();
+  } catch {
+    return connectionString;
+  }
+}
+
 export function getDb() {
   if (!db) {
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString = getConnectionString();
 
     if (!connectionString) {
-      throw new Error("DATABASE_URL is required for application data access.");
+      throw new Error(
+        "DATABASE_URL or POSTGRES_URL is required for application data access.",
+      );
     }
+
+    const ssl = getSslConfig(connectionString);
 
     db = new Kysely<Database>({
       dialect: new PostgresDialect({
         pool: new Pool({
-          connectionString,
-          ssl:
-            process.env.DATABASE_SSL === "true"
-              ? { rejectUnauthorized: false }
-              : undefined,
+          connectionString: getPoolConnectionString(connectionString, Boolean(ssl)),
+          ssl,
         }),
       }),
     });

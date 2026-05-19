@@ -24,6 +24,7 @@ interface CalendarViewProps {
   detailSlot?: React.ReactNode
   detailMode?: "default" | "expanded"
   onSelectedBlockChange?: (block: TimeBlock | null) => void
+  onMonthChange?: (range: { start: string; end: string }) => void
 }
 
 const MONTHS = [
@@ -49,6 +50,7 @@ export function CalendarView({
   detailSlot,
   detailMode = "default",
   onSelectedBlockChange,
+  onMonthChange,
 }: CalendarViewProps) {
   const todayKey = toDateKey(new Date())
   const buckets = useMemo(() => bucketByDay(blocks), [blocks])
@@ -111,6 +113,7 @@ export function CalendarView({
     }
     setSelectedKey(defaultKeyForMonth(nextYear, nextMonth, buckets))
     setSelectedBlockId(null)
+    onMonthChange?.(monthRangeInput(nextYear, nextMonth))
   }
   const goNext = () => {
     const nextYear = month === 11 ? year + 1 : year
@@ -123,6 +126,7 @@ export function CalendarView({
     }
     setSelectedKey(defaultKeyForMonth(nextYear, nextMonth, buckets))
     setSelectedBlockId(null)
+    onMonthChange?.(monthRangeInput(nextYear, nextMonth))
   }
 
   return (
@@ -502,6 +506,16 @@ function toDateKey(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, "0")
   const d = String(date.getDate()).padStart(2, "0")
   return `${y}-${m}-${d}`
+}
+
+function monthRangeInput(year: number, month: number) {
+  const start = new Date(year, month, 1)
+  const end = new Date(year, month + 1, 1)
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+  }
 }
 
 function defaultKeyForMonth(

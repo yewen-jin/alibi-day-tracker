@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/lib/db/client";
+import type { AppUserRow } from "@/lib/db/client";
 
 export interface CurrentUser {
   id: string;
@@ -12,6 +13,13 @@ export class AuthRequiredError extends Error {
   constructor() {
     super("Authentication required");
     this.name = "AuthRequiredError";
+  }
+}
+
+export class AdminRequiredError extends Error {
+  constructor() {
+    super("Superadmin access required");
+    this.name = "AdminRequiredError";
   }
 }
 
@@ -57,8 +65,34 @@ export async function syncAppUser(user: CurrentUser): Promise<void> {
     .execute();
 }
 
+export async function getAppUser(userId: string): Promise<AppUserRow | null> {
+  const row = await getDb()
+    .selectFrom("app_users")
+    .selectAll()
+    .where("id", "=", userId)
+    .executeTakeFirst();
+
+  return row ?? null;
+}
+
+export async function isSuperadmin(userId: string): Promise<boolean> {
+  const appUser = await getAppUser(userId);
+
+  return appUser?.role === "superadmin";
+}
+
 export async function requireSyncedUser(): Promise<CurrentUser> {
   const user = await requireUser();
   await syncAppUser(user);
+  return user;
+}
+
+export async function requireSuperadmin(): Promise<CurrentUser> {
+  const user = await requireUser();
+
+  if (!(await isSuperadmin(user.id))) {
+    throw new AdminRequiredError();
+  }
+
   return user;
 }

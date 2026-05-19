@@ -8,6 +8,7 @@ create table if not exists app_users (
   id uuid primary key,
   email text,
   auth_provider text not null default 'supabase',
+  role text not null default 'user' check (role in ('user', 'superadmin')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

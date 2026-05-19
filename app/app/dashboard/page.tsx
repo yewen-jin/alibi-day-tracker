@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation"
 import { deriveCompanionMessageInsightRecord } from "@/lib/chat-insights"
-import { getCurrentUser } from "@/lib/auth/session"
+import { getCurrentUser, syncAppUser } from "@/lib/auth/session"
 import {
   listRecentCompanionMessageInsights,
   listRecentUserCompanionMessages,
 } from "@/lib/repositories/companion"
 import {
-  listCompletedTimeBlocks,
+  listRecentCompletedTimeBlocks,
   listTimeBlockCategories,
   listTimeBlockInsightsForBlocks,
 } from "@/lib/repositories/time-blocks"
@@ -22,12 +22,24 @@ export default async function DashboardPage() {
 
   if (!user) redirect("/")
 
-  const safeBlocks = await listCompletedTimeBlocks(user.id)
+  await syncAppUser(user)
+
+  const since = new Date()
+  since.setDate(since.getDate() - 90)
+
+  const [
+    safeBlocks,
+    safeChatInsights,
+    safeCategories,
+    userMessages,
+  ] = await Promise.all([
+    listRecentCompletedTimeBlocks(user.id, since),
+    listRecentCompanionMessageInsights(user.id),
+    listTimeBlockCategories(user.id),
+    listRecentUserCompanionMessages(user.id),
+  ])
   const blockIds = safeBlocks.map((block) => block.id)
   const safeInsights = await listTimeBlockInsightsForBlocks(user.id, blockIds)
-  const safeChatInsights = await listRecentCompanionMessageInsights(user.id)
-  const safeCategories = await listTimeBlockCategories(user.id)
-  const userMessages = await listRecentUserCompanionMessages(user.id)
   const messageBackfillInsights = userMessages
     .map((message) =>
       deriveCompanionMessageInsightRecord(
@@ -57,7 +69,7 @@ export default async function DashboardPage() {
   return (
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-6 p-8">
-        <TopNav userEmail={user.email ?? null} />
+        <TopNav userEmail={user.email ?? null} activeHref="/app/dashboard" />
 
         <header className="px-2 sm:px-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

@@ -2,10 +2,23 @@ import "server-only";
 
 import { getDb } from "@/lib/db/client";
 import type {
+  ActiveTimer,
   TimeBlock,
   TimeBlockCategoryRecord,
   TimeBlockInsight,
 } from "@/lib/types";
+
+export async function getActiveTimerForUser(
+  userId: string,
+): Promise<ActiveTimer | null> {
+  const row = await getDb()
+    .selectFrom("active_timer")
+    .selectAll()
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+
+  return (row as ActiveTimer | undefined) ?? null;
+}
 
 export async function listCompletedTimeBlocks(userId: string): Promise<TimeBlock[]> {
   const rows = await getDb()
@@ -14,6 +27,40 @@ export async function listCompletedTimeBlocks(userId: string): Promise<TimeBlock
     .where("user_id", "=", userId)
     .where("ended_at", "is not", null)
     .orderBy("started_at", "desc")
+    .execute();
+
+  return rows as TimeBlock[];
+}
+
+export async function listRecentCompletedTimeBlocks(
+  userId: string,
+  since: Date,
+): Promise<TimeBlock[]> {
+  const rows = await getDb()
+    .selectFrom("time_blocks")
+    .selectAll()
+    .where("user_id", "=", userId)
+    .where("ended_at", "is not", null)
+    .where("started_at", ">=", since.toISOString())
+    .orderBy("started_at", "desc")
+    .execute();
+
+  return rows as TimeBlock[];
+}
+
+export async function listCompletedTimeBlocksInRange(
+  userId: string,
+  start: string,
+  end: string,
+): Promise<TimeBlock[]> {
+  const rows = await getDb()
+    .selectFrom("time_blocks")
+    .selectAll()
+    .where("user_id", "=", userId)
+    .where("started_at", "<", end)
+    .where("ended_at", "is not", null)
+    .where("ended_at", ">", start)
+    .orderBy("started_at", "asc")
     .execute();
 
   return rows as TimeBlock[];
