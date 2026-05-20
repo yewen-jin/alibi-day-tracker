@@ -6,21 +6,57 @@ import {
   listTimeBlockCategories,
 } from "@/lib/repositories/time-blocks"
 import { getMonthRange } from "@/lib/time-block-display"
+import { getGoogleCalendarConnection } from "@/lib/google-calendar"
 import { TopNav } from "@/components/top-nav"
 import { CalendarWorkspace } from "@/components/calendar-workspace"
+import { CalendarSyncControls } from "@/components/calendar-sync-controls"
 
-export default async function CalendarPage() {
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function googleStatusMessage(status: string | undefined, message: string | undefined) {
+  if (status === "connected") {
+    return { type: "success" as const, text: "google calendar connected." }
+  }
+
+  if (status === "not_configured") {
+    return { type: "error" as const, text: "google calendar is not configured. check GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and NEXT_PUBLIC_SITE_URL." }
+  }
+
+  if (status === "missing") {
+    return { type: "error" as const, text: message || "google did not return the required callback values." }
+  }
+
+  if (status === "error") {
+    return { type: "error" as const, text: message || "google calendar connection failed." }
+  }
+
+  return null
+}
+
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const user = await getCurrentUser()
 
   if (!user) redirect("/auth/login")
 
   await syncAppUser(user)
 
+  const params = searchParams ? await searchParams : {}
+  const googleStatus = googleStatusMessage(
+    firstSearchParam(params.google),
+    firstSearchParam(params.message),
+  )
   const month = getMonthRange()
-  const [timeBlocks, categories, companionThread] = await Promise.all([
+  const [timeBlocks, categories, companionThread, calendarConnection] = await Promise.all([
     listCompletedTimeBlocksInRange(user.id, month.input.start, month.input.end),
     listTimeBlockCategories(user.id),
     getCompanionThread(),
+    getGoogleCalendarConnection(user.id),
   ])
 
   return (
@@ -47,6 +83,21 @@ export default async function CalendarPage() {
           initialCategories={categories}
           initialCompanionThread={companionThread ?? undefined}
         />
+
+        {googleStatus && (
+          <div
+            role={googleStatus.type === "error" ? "alert" : undefined}
+            className={
+              googleStatus.type === "error"
+                ? "alibi-banner-error"
+                : "alibi-banner-info"
+            }
+          >
+            {googleStatus.text}
+          </div>
+        )}
+
+        <CalendarSyncControls connection={calendarConnection} />
 
         <footer className="text-center text-sm font-semibold tracking-[0.04em] text-alibi-teal">
           alibi — for the days you can&apos;t see clearly

@@ -184,6 +184,73 @@ interface CompanionMessageInsightsTable {
   created_at: GeneratedTimestamp;
 }
 
+interface UserSecretKeysTable {
+  id: Generated<string>;
+  user_id: string;
+  purpose: string;
+  provider: string;
+  encrypted_value: string;
+  key_hint: string | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+interface UserAiSettingsTable {
+  user_id: string;
+  mode: Generated<string>;
+  provider: Generated<string>;
+  base_url: string | null;
+  fast_model: Generated<string>;
+  companion_model: Generated<string>;
+  key_preview: string | null;
+  disclosure_accepted_at: NullableTimestamp;
+  disabled_at: NullableTimestamp;
+  tested_at: NullableTimestamp;
+  last_error: string | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+interface UserAiProviderSettingsTable {
+  user_id: string;
+  provider: string;
+  base_url: string | null;
+  fast_model: Generated<string>;
+  companion_model: Generated<string>;
+  key_preview: string | null;
+  disclosure_accepted_at: NullableTimestamp;
+  disabled_at: NullableTimestamp;
+  tested_at: NullableTimestamp;
+  last_error: string | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+interface GoogleCalendarConnectionsTable {
+  user_id: string;
+  google_account_email: string | null;
+  google_calendar_id: string | null;
+  scope: string;
+  connected_at: GeneratedTimestamp;
+  token_expires_at: NullableTimestamp;
+  last_sync_at: NullableTimestamp;
+  last_error: string | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+interface GoogleCalendarEventSyncsTable {
+  user_id: string;
+  time_block_id: string;
+  google_event_id: string | null;
+  content_hash: string;
+  sync_status: Generated<string>;
+  last_error: string | null;
+  synced_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
 export interface Database {
   app_users: AppUsersTable;
   entries: EntriesTable;
@@ -197,6 +264,11 @@ export interface Database {
   companion_messages: CompanionMessagesTable;
   companion_drafts: CompanionDraftsTable;
   companion_message_insights: CompanionMessageInsightsTable;
+  user_secret_keys: UserSecretKeysTable;
+  user_ai_settings: UserAiSettingsTable;
+  user_ai_provider_settings: UserAiProviderSettingsTable;
+  google_calendar_connections: GoogleCalendarConnectionsTable;
+  google_calendar_event_syncs: GoogleCalendarEventSyncsTable;
 }
 
 export type AppUserRow = Selectable<AppUsersTable>;

@@ -4,9 +4,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 const openrouter = createOpenAICompatible({
   name: "openrouter",
   baseURL: "https://openrouter.ai/api/v1",
-  headers: {
-    Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-  },
+  apiKey: process.env.OPENROUTER_API_KEY,
 })
 
 export const fastModelId = "openai/gpt-4.1-nano"

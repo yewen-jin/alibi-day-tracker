@@ -19,6 +19,7 @@ Alibi is moving from a simple timer tracker toward a qualitative productivity pa
 - **Chat is the elicitation layer.** The agent helps the user reconstruct what happened, name feelings, fill missing details, and log or edit blocks when natural language is easier.
 - **Derived insights are replaceable interpretations.** AI output can summarize and structure, but raw notes and chat remain the truth.
 - **Context belongs to Alibi, not the model vendor.** The app should retrieve and format its own evidence from the database so the companion model can be replaced without losing memory.
+- **Integrations must be explicit and reversible.** Calendar, model-provider, and voice features require clear consent, narrow scopes, secret handling, and visible status/error states.
 - **Future RAG should retrieve evidence, not vibes.** Any retrieval workflow should cite the original time block, note, chat turn, or derived observation it used.
 
 ## User Model
@@ -118,6 +119,20 @@ Required behavior for block-specific companion threads:
 
 The agent must not guess missing time windows or silently invent categories when the user is uncertain. If information is necessary to write a valid block in the general thread, it asks. This applies to both time and category: a duration-only input is not enough to save a block, and a category inferred from keyword matching must be confirmed with the user before saving.
 
+### Voice Chat
+
+Voice is an alternate input/output surface for the same companion flow, not a separate assistant.
+
+Required behavior:
+
+- microphone input becomes a transcript, then the transcript is submitted through the existing `processCompanionMessage` flow;
+- assistant text replies can optionally be played back as speech;
+- mute/stop states must be visible and easy to control;
+- raw audio must not be stored by default;
+- Cartesia API keys and access tokens must never be exposed in page source, logs, or persistent client storage.
+
+The first implementation uses push-to-talk browser recording with server-side batch transcription. Realtime streaming can be added later if latency becomes the main product constraint.
+
 ### Calendar And Mirror
 
 The timeline interface should make days, gaps, and rhythms visible without treating empty time as failure.
@@ -132,6 +147,23 @@ Selecting a day updates the daily timeline, clears any selected block detail/edi
 Selecting a timeline block opens an inline detail panel in the calendar workspace and narrows the month/timeline area to make room for it. The detail panel uses the same reusable time-block detail component as the tracker: time range and duration appear first, available actions appear next using flexbox, and category/task/notes/hashtags appear below. On wide tracker rows, time and actions may sit on one line; in compact calendar detail panels, actions can wrap under the time while remaining above the content.
 
 Calendar block details support chat, edit, and delete. Block-specific chat opens the selected block's reflective companion thread; returning to main chat restores the general companion thread. Resume remains tracker-only.
+
+### Google Calendar Sync
+
+Google Calendar sync is separate from login OAuth. Connecting Google Calendar should request the narrowest practical calendar scope and should not imply Gmail access.
+
+Required behavior:
+
+- create or reuse a separate secondary Google calendar named `alibi`;
+- sync completed `time_blocks` as Alibi-created events;
+- track the mapping from `time_block_id` to `google_event_id`;
+- track content hash, sync status, last error, and synced timestamp;
+- auto-sync after save/edit/delete when connected;
+- expose manual retry from `/app/calendar`;
+- delete the Google event when an Alibi-created time block is deleted;
+- keep imported/synced calendar events visually and semantically separate from Alibi source records.
+
+The current sync contract is one-way export of Alibi blocks into the separate `alibi` calendar. Reading the user's existing agenda as contextual overlay is future work and should require a separate product decision.
 
 The mirror/insight interface should surface observations such as:
 
@@ -190,6 +222,16 @@ Default scope is today. User language can expand context to yesterday, the last 
 
 `companion_drafts` stores temporary clarification state for the general companion thread when the agent needs more information before writing a valid time block.
 
+`user_secret_keys` stores encrypted secrets such as user AI provider keys and Google refresh tokens. The client must only receive masked previews.
+
+`user_ai_settings` stores hosted/custom AI mode, provider id, provider base URL when applicable, model ids, disclosure acceptance, test status, disabled state, and last error.
+
+`user_ai_provider_settings` stores provider-scoped BYOK settings. Each saved provider key can have its own base URL, fast model, companion model, key preview, disclosure acceptance, test status, disabled state, and last error. `user_ai_settings` remains the active provider selector for runtime resolution.
+
+`google_calendar_connections` stores the user's Google Calendar connection state and the secondary `alibi` calendar id.
+
+`google_calendar_event_syncs` stores per-time-block Google event sync state: event id, content hash, status, last error, and synced timestamp.
+
 Legacy `coach_messages` and `coach_drafts` may remain in existing databases temporarily. The additive migration copies them into the new `companion_*` tables without deleting or overwriting legacy rows.
 
 `entries` is legacy-only unless a future feature intentionally reuses it as a separate quick-note surface.
@@ -212,10 +254,26 @@ Agentic schema evolution must be migration-reviewed. The agent may propose datab
 
 The agent's job is to elicit, preserve, and reflect evidence.
 
-AI calls should use a split-model strategy through OpenRouter:
+AI calls should use a split-model strategy:
 
 - fast, low-cost models for mechanical work such as intent routing, structured extraction, and terse acknowledgments;
 - stronger companion models for user-visible reflection, saved-block analysis, and proactive insight text where tone, restraint, and evidence grounding matter.
+
+Hosted defaults use OpenRouter. Authenticated users may choose custom provider mode with an encrypted user-owned API key.
+
+BYOK requirements:
+
+- supported providers must be allowlisted;
+- API keys must be encrypted server-side and never returned to the client;
+- the UI must show only masked previews;
+- users must be able to test, disable, and delete custom settings;
+- provider/key management must be separate from model selection so saved keys can be reused while changing fast and companion model IDs;
+- model choices must be scoped to the saved provider key, not global across all saved keys;
+- users must be able to select a saved provider key and restore that key's model IDs;
+- users must be able to reset the selected provider key's model choices to the app's default fast and companion model IDs;
+- settings must show current mode, active provider, active model IDs, key preview, saved keys, and test status;
+- users must explicitly acknowledge that Alibi will send chat, notes, time blocks, and memory context to their selected provider;
+- generated messages and insights should persist the provider/model metadata used for the generation.
 
 The reusable companion voice prompt should stay centralized in code so chat, analysis, and proactive insight copy share the same product voice.
 
@@ -239,6 +297,7 @@ It must not:
 - mutate database structure autonomously;
 - create logs when required details are missing.
 - let block-specific reflective threads mutate time blocks or timers.
+- expose API keys, Google refresh tokens, Cartesia tokens, or raw audio in UI/logs.
 
 ## Guardrails
 
@@ -254,6 +313,7 @@ Alibi is not:
 | A vague chatbot | Chat writes through structured time-block operations. |
 | A therapy app | Journaling can be CBT-style and reflective, but Alibi does not provide treatment. |
 | A generic wellness journal | The product is anchored to timestamped time blocks and evidence trails. |
+| A Gmail client | Calendar sync is for Google Calendar only; email import is separate future work. |
 
 If a feature makes the user feel pushed, ranked, or corrected, it does not fit.
 
@@ -268,3 +328,4 @@ The qualitative pattern engine is working when:
 - dashboard and chat analysis prioritize note evidence;
 - observations can point back to dated, timed source material;
 - future RAG work has clean source records to retrieve from.
+- integration features are consented, inspectable, revocable, and scoped to the minimum data needed.
