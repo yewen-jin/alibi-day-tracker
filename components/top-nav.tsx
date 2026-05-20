@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { BookOpen, CalendarDays, Clock3, LayoutGrid } from "lucide-react"
+import { BookOpen, CalendarDays, Clock3, LayoutGrid, Settings } from "lucide-react"
 import { SignOutButton } from "@/components/sign-out-button"
 import { cn } from "@/lib/utils"
 
@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/app", label: "tracker", icon: Clock3 },
   { href: "/app/dashboard", label: "dashboard", icon: LayoutGrid },
   { href: "/app/calendar", label: "calendar", icon: CalendarDays },
+  { href: "/app/settings", label: "settings", icon: Settings },
   { href: "/docs", label: "docs", icon: BookOpen },
 ]
 

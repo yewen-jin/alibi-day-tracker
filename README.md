@@ -7,7 +7,7 @@ The current product is timer-first and notes-first:
 - Work is stored as dated `time_blocks`.
 - Notes are the human-authored source of truth: what happened, what got in the way, how it felt, what changed, and what the user noticed.
 - Chat is a secondary input surface that can start/stop timers, log completed blocks, ask clarifying questions, and answer from saved evidence.
-- Calendar is a timeline workspace for scanning days, selecting completed blocks inline, and opening block-specific chat/edit/delete actions without leaving the calendar.
+- Calendar is a timeline workspace for scanning days, selecting completed blocks inline, opening block-specific chat/edit/delete actions, and syncing completed blocks to a separate Google `alibi` calendar when connected.
 - Dashboard insights are grounded in saved blocks, note-derived signals, and visible evidence trails.
 
 ---
@@ -49,6 +49,8 @@ Chat can:
 
 Chat history is useful context, but block notes are treated as stronger evidence.
 
+Chat can also use push-to-talk voice input and optional spoken companion replies when Cartesia is configured. Raw audio is sent through the server for transcription and is not stored by default.
+
 ### 4. Notes-first insight engine
 
 When a block is saved or updated:
@@ -77,6 +79,12 @@ The authenticated calendar route combines a compact month view with a selected-d
 
 The calendar companion panel hydrates the same main companion chat as `/app`. Using `chat about this` switches to the selected block's reflective thread, and `main chat` returns to the general thread.
 
+When Google Calendar is connected, Alibi creates a separate secondary `alibi` calendar and syncs completed `time_blocks` as events. Save/edit/delete operations attempt to keep the matching Google event in sync, and `/app/calendar` includes a manual retry control.
+
+### 7. BYOK model settings
+
+`/app/settings` lets authenticated users choose hosted defaults or save custom AI provider keys. Provider/key management is separate from model selection: each saved provider key keeps its own fast and companion model IDs, and selecting a saved provider restores that provider's model choices. Users can also reset the selected provider's models to the default IDs. Custom keys are encrypted server-side, masked in the UI, and can be tested, disabled, or deleted. The settings screen includes an active status panel for mode, provider, models, key preview, saved keys, and last test state, and explicitly discloses that Alibi will send chat, notes, time blocks, and memory context to the selected provider.
+
 ---
 
 ## Routes
@@ -87,6 +95,7 @@ The calendar companion panel hydrates the same main companion chat as `/app`. Us
 | `/app` | Authenticated timer, block editor, daily block list, and chat panel |
 | `/app/calendar` | Month calendar, selected-day timeline, inline block detail, and calendar companion chat |
 | `/app/dashboard` | Dashboard summaries, pattern markers, and notes mirror |
+| `/app/settings` | Hosted/default AI mode, BYOK provider key settings, model selection/reset, status, key test/disable/delete |
 | `/app/docs` | Feature guide |
 | `/auth/login` | Email/password login |
 | `/auth/sign-up` | Sign up |
@@ -105,16 +114,26 @@ The calendar companion panel hydrates the same main companion chat as `/app`. Us
 | Styling | Tailwind CSS v4 |
 | Database | Supabase Postgres with Row Level Security |
 | Auth | Supabase Auth |
-| AI | AI SDK v6 through OpenRouter |
+| AI | AI SDK v6 through hosted OpenRouter defaults or per-user BYOK providers |
+| Voice | Cartesia STT/TTS via server routes |
+| Calendar Sync | Google Calendar API with a separate user-owned `alibi` calendar |
 
 ### AI model and voice configuration
 
-OpenRouter model setup is centralized in [`lib/ai.ts`](./lib/ai.ts):
+Hosted OpenRouter defaults are centralized in [`lib/ai.ts`](./lib/ai.ts):
 
 - `fastModelId` is `openai/gpt-4.1-nano` for routing, structured extraction, and short acknowledgments.
 - `companionModelId` is `openai/gpt-5-mini` for user-visible companion chat, saved-block analysis, and proactive insight copy.
 
+Per-user BYOK resolution lives in [`lib/ai-settings.ts`](./lib/ai-settings.ts). Supported providers are OpenRouter, OpenAI, OpenAI-compatible HTTPS endpoints, and Anthropic. Custom API keys are encrypted with `ALIBI_SECRET_ENCRYPTION_KEY` and stored in `user_secret_keys`.
+
 Alibi's reusable companion voice prompt lives in [`lib/companion-voice.ts`](./lib/companion-voice.ts). Change `alibiCompanionGuide` there to tune how the companion sounds. It is used by companion chat, saved-block analysis, and proactive insight generation.
+
+Cartesia routes live under `/api/cartesia/*`:
+
+- `/api/cartesia/token` mints short-lived client access tokens with `stt` and `tts` grants.
+- `/api/cartesia/stt` transcribes push-to-talk browser recordings.
+- `/api/cartesia/tts` returns generated speech for companion replies.
 
 ---
 
@@ -123,6 +142,14 @@ Alibi's reusable companion voice prompt lives in [`lib/companion-voice.ts`](./li
 The primary schema is in [db/supabase-v2.sql](./db/supabase-v2.sql).
 
 For existing Supabase projects, run [db/supabase-chat-history.sql](./db/supabase-chat-history.sql) once to create the additive `companion_*` tables and backfill legacy chat rows without deleting them.
+
+Portable migrations live in [`db/migrations`](./db/migrations). The integrations migration adds:
+
+- `user_secret_keys` for encrypted AI provider keys and Google refresh tokens.
+- `user_ai_settings` for hosted/custom mode and the active provider selector.
+- `user_ai_provider_settings` for each saved provider key's base URL, model IDs, key preview, disclosure, and test status.
+- `google_calendar_connections` for OAuth connection and secondary calendar state.
+- `google_calendar_event_syncs` for `time_block_id -> google_event_id`, content hashes, sync status, errors, and synced timestamps.
 
 ### `time_blocks`
 
@@ -289,9 +316,15 @@ alibi-day-tracker/
 │   │   ├── page.tsx
 │   │   ├── calendar/page.tsx
 │   │   ├── dashboard/page.tsx
+│   │   ├── settings/page.tsx
 │   │   └── docs/page.tsx
+│   ├── api/
+│   │   ├── cartesia/
+│   │   └── google/calendar/callback/
 │   ├── auth/
 │   └── actions/
+│       ├── ai-settings.ts
+│       ├── calendar-sync.ts
 │       ├── timer.ts
 │       ├── process-message.ts
 │       ├── generate-insight.ts
@@ -313,6 +346,9 @@ alibi-day-tracker/
 │       └── stats-overview.tsx
 ├── lib/
 │   ├── block-draft-utils.ts   ← pure helpers extracted for testing
+│   ├── ai-settings.ts
+│   ├── google-calendar.ts
+│   ├── secret-crypto.ts
 │   ├── note-insights.ts
 │   ├── dashboard-data.ts
 │   ├── ai.ts
@@ -344,6 +380,8 @@ alibi-day-tracker/
 - If `pnpm` is not already available on a new machine, enable it with `corepack enable` after installing Node.js.
 - Supabase project with auth enabled
 - OpenRouter API key
+- `DATABASE_URL` for the app-data Kysely repository path
+- `ALIBI_SECRET_ENCRYPTION_KEY` for BYOK and Google refresh-token encryption
 
 ### Environment Variables
 
@@ -353,6 +391,22 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
 OPENROUTER_API_KEY=
+DATABASE_URL=
+ALIBI_SECRET_ENCRYPTION_KEY=
+
+# optional Google Calendar sync
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+NEXT_PUBLIC_SITE_URL=
+ALIBI_OAUTH_STATE_SECRET=
+
+# optional Cartesia voice chat
+CARTESIA_API_KEY=
+CARTESIA_DEFAULT_VOICE_ID=
+CARTESIA_VERSION=
+CARTESIA_TTS_MODEL=
+CARTESIA_STT_MODEL=
+
 # optional demo-only OpenRouter configuration
 OPENROUTER_DEMO_API_KEY=
 OPENROUTER_DEMO_FAST_MODEL=
@@ -372,21 +426,26 @@ pnpm install
 pnpm dev
 ```
 
-Apply [supabase-v2.sql](./supabase-v2.sql) in the Supabase SQL editor. If your hosted database already has the v2 tables, make sure the V3 additions are present:
+Apply [supabase-v2.sql](./db/supabase-v2.sql) in the Supabase SQL editor for the legacy Supabase schema, or run the portable migrations in [`db/migrations`](./db/migrations) against a Postgres database. If your hosted database already has the v2 tables, make sure the V3 and integration additions are present:
 
 - `time_blocks.agent_metadata`
 - `time_block_note_versions`
 - `time_block_insights`
+- `user_secret_keys`
+- `user_ai_settings`
+- `user_ai_provider_settings`
+- `google_calendar_connections`
+- `google_calendar_event_syncs`
 
 ### Verification
 
 ```bash
 pnpm build      # type-check + static build
-pnpm test       # 65 unit tests (Vitest)
+pnpm test       # unit tests (Vitest)
 pnpm test:e2e   # Playwright E2E against localhost:3000 (requires dev server)
 ```
 
-`pnpm build` and `pnpm test` both pass. `pnpm lint` is broken and pending a fix.
+`pnpm build` and focused unit tests pass. `pnpm lint` is broken and pending a fix.
 
 ---
 

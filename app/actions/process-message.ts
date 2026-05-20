@@ -2,7 +2,8 @@
 
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { companionModel, companionModelId, fastModel } from "@/lib/ai";
+import { companionModelId } from "@/lib/ai";
+import { resolveAiModelsForUser, type ResolvedAiModels } from "@/lib/ai-settings";
 import {
   CATEGORIES,
   categoryTextForDraft,
@@ -577,6 +578,7 @@ async function insertCompanionMessage(
     content: string;
     messageType?: CompanionMessageType;
     metadata?: Record<string, unknown>;
+    model?: string;
   },
 ) {
   const { data, error } = await supabase
@@ -587,7 +589,7 @@ async function insertCompanionMessage(
       role: values.role,
       content: values.content,
       message_type: values.messageType ?? "chat",
-      model: companionModelId,
+      model: values.model ?? companionModelId,
       related_time_block_id: conversation.related_time_block_id,
       metadata: values.metadata ?? {},
     })
@@ -774,6 +776,7 @@ export async function getCompanionHasPendingDraft(): Promise<boolean> {
 }
 
 async function routeMessage(
+  models: ResolvedAiModels,
   text: string,
   draft: CompanionDraft | null | undefined,
   timezone: string | null | undefined,
@@ -781,7 +784,7 @@ async function routeMessage(
 ): Promise<RouterOutput> {
   try {
     const { output } = await generateText({
-      model: fastModel,
+      model: models.fastModel,
       output: Output.object({ schema: routerSchema }),
       prompt: [
         "Classify this Alibi chat message and extract structured time-block data.",
@@ -842,6 +845,7 @@ async function routeMessage(
 }
 
 async function completeDraftFromClarification(
+  models: ResolvedAiModels,
   text: string,
   draft: CompanionDraft,
   timezone: string | null | undefined,
@@ -849,7 +853,7 @@ async function completeDraftFromClarification(
 ): Promise<CompanionDraft> {
   try {
     const { output } = await generateText({
-      model: fastModel,
+      model: models.fastModel,
       output: Output.object({ schema: companionDraftSchema }),
       prompt: [
         "Complete an existing Alibi time-block draft from the user's latest clarification answer.",
@@ -895,6 +899,7 @@ async function completeDraftFromClarification(
 }
 
 async function makeAck(
+  models: ResolvedAiModels,
   kind: "logged" | "started" | "stopped",
   subject: string,
 ) {
@@ -907,7 +912,7 @@ async function makeAck(
 
   try {
     const { text } = await generateText({
-      model: fastModel,
+      model: models.fastModel,
       prompt: [
         "You are Alibi. Write one short lowercase acknowledgment.",
         "Rules: 2 to 5 words, end with a period, no emojis, no exclamation marks, no praise.",
@@ -926,10 +931,12 @@ async function makeAck(
 }
 
 async function makeSavedBlockReply({
+  models,
   action,
   timeBlock,
   userMessage,
 }: {
+  models: ResolvedAiModels;
   action: "logged" | "stopped";
   timeBlock: TimeBlock;
   userMessage: string;
@@ -941,7 +948,7 @@ async function makeSavedBlockReply({
 
   try {
     const { text } = await generateText({
-      model: companionModel,
+      model: models.companionModel,
       system: [
         "You are Alibi. The time block has already been saved in the database.",
         alibiCompanionGuide,
@@ -966,6 +973,7 @@ async function makeSavedBlockReply({
 }
 
 async function analyseBlocks({
+  models,
   supabase,
   userId,
   conversation,
@@ -973,6 +981,7 @@ async function analyseBlocks({
   draft,
   recentMessages,
 }: {
+  models: ResolvedAiModels;
   supabase: Supabase;
   userId: string;
   conversation: CompanionConversation;
@@ -991,7 +1000,7 @@ async function analyseBlocks({
 
   try {
     const { text } = await generateText({
-      model: companionModel,
+      model: models.companionModel,
       system: [
         "You are Alibi: the friend who remembers the user's day so they don't have to defend it to themselves.",
         alibiCompanionGuide,
@@ -1026,6 +1035,7 @@ async function analyseBlocks({
 }
 
 async function companionChat({
+  models,
   supabase,
   userId,
   conversation,
@@ -1033,6 +1043,7 @@ async function companionChat({
   draft,
   recentMessages,
 }: {
+  models: ResolvedAiModels;
   supabase: Supabase;
   userId: string;
   conversation: CompanionConversation;
@@ -1051,7 +1062,7 @@ async function companionChat({
 
   try {
     const { text } = await generateText({
-      model: companionModel,
+      model: models.companionModel,
       system: [
         "You are Alibi: a conversational witness for the user's day.",
         alibiCompanionGuide,
@@ -1078,6 +1089,7 @@ async function companionChat({
 }
 
 async function timeBlockCompanionChat(
+  models: ResolvedAiModels,
   message: string,
   conversation: CompanionConversation,
   recentMessages: CompanionMessage[],
@@ -1090,7 +1102,7 @@ async function timeBlockCompanionChat(
 
   try {
     const { text } = await generateText({
-      model: companionModel,
+      model: models.companionModel,
       system: [
         "You are Alibi: a reflective companion for one saved time block.",
         alibiCompanionGuide,
@@ -1210,6 +1222,8 @@ export async function processCompanionMessage(
     };
   }
 
+  const models = await resolveAiModelsForUser(user.id);
+
   const userMessage = await insertCompanionMessage(
     supabase,
     user.id,
@@ -1217,6 +1231,7 @@ export async function processCompanionMessage(
     {
       role: "user",
       content: trimmed,
+      model: models.companionModelId,
     },
   );
 
@@ -1259,6 +1274,7 @@ export async function processCompanionMessage(
       content,
       messageType,
       metadata,
+      model: models.companionModelId,
     });
 
     return withThreadState(supabase, user.id, conversation, result);
@@ -1266,6 +1282,7 @@ export async function processCompanionMessage(
 
   if (conversation.kind === "time_block") {
     const message = await timeBlockCompanionChat(
+      models,
       trimmed,
       conversation,
       recentMessages,
@@ -1286,6 +1303,7 @@ export async function processCompanionMessage(
     conversation.id,
   );
   const routed = await routeMessage(
+    models,
     trimmed,
     pendingDraft,
     timezone,
@@ -1293,6 +1311,7 @@ export async function processCompanionMessage(
   );
   const clarificationDraft = pendingDraft
     ? await completeDraftFromClarification(
+        models,
         trimmed,
         pendingDraft,
         timezone,
@@ -1313,7 +1332,7 @@ export async function processCompanionMessage(
     const result = await startTimer();
     if (result.type === "started") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
-      const ack = await makeAck("started", mergedDraft.task_name ?? "timer");
+      const ack = await makeAck(models, "started", mergedDraft.task_name ?? "timer");
       return finishWithAssistant(
         {
           type: "timer_started",
@@ -1360,6 +1379,7 @@ export async function processCompanionMessage(
     if (result.type === "stopped") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
       const ack = await makeSavedBlockReply({
+        models,
         action: "stopped",
         timeBlock: result.timeBlock,
         userMessage: trimmed,
@@ -1388,6 +1408,7 @@ export async function processCompanionMessage(
 
   if (routed.intent === "analyse_blocks") {
     const message = await analyseBlocks({
+      models,
       supabase,
       userId: user.id,
       conversation,
@@ -1411,6 +1432,7 @@ export async function processCompanionMessage(
     }
 
     const message = await companionChat({
+      models,
       supabase,
       userId: user.id,
       conversation,
@@ -1480,6 +1502,7 @@ export async function processCompanionMessage(
   if (result.type === "saved") {
     await resolvePendingDraft(supabase, user.id, conversation.id);
     const ack = await makeSavedBlockReply({
+      models,
       action: "logged",
       timeBlock: result.timeBlock,
       userMessage: trimmed,

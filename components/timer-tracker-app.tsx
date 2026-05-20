@@ -657,10 +657,11 @@ function ActiveTimerCard({
   onStop: () => void;
   onRefresh: () => void;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  const elapsed = getElapsedSeconds(activeTimer, now);
+  const [now, setNow] = useState<number | null>(null);
+  const elapsed = now === null ? 0 : getElapsedSeconds(activeTimer, now);
 
   useEffect(() => {
+    setNow(Date.now());
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);

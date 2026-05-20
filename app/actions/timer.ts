@@ -5,6 +5,10 @@ import { generateNoteInsight } from "@/lib/ai-note-insights"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import { createClient } from "@/lib/supabase/server"
 import {
+  deleteTimeBlockFromGoogleCalendar,
+  syncTimeBlockToGoogleCalendar,
+} from "@/lib/google-calendar"
+import {
   defaultCategoryColor,
   withDistinctCategoryColors,
 } from "@/lib/time-block-display"
@@ -1006,6 +1010,8 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
     }
   }
 
+  await syncTimeBlockToGoogleCalendar(user.id, timeBlock).catch(() => undefined)
+
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
@@ -1108,6 +1114,8 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
       noteSourceFromInput(input.note_source),
     )
 
+    await syncTimeBlockToGoogleCalendar(user.id, timeBlock as TimeBlock).catch(() => undefined)
+
     revalidatePath("/app")
     revalidatePath("/app/dashboard")
     revalidatePath("/app/calendar")
@@ -1139,6 +1147,8 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
     noteSourceFromInput(input.note_source),
   )
 
+  await syncTimeBlockToGoogleCalendar(user.id, timeBlock as TimeBlock).catch(() => undefined)
+
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
@@ -1167,6 +1177,8 @@ export async function deleteBlock(input: DeleteBlockInput): Promise<DeleteBlockR
   if (!user) {
     return { type: "error", message: "not signed in." }
   }
+
+  await deleteTimeBlockFromGoogleCalendar(user.id, validated.id).catch(() => undefined)
 
   const { data: timeBlock, error: deleteError } = await supabase
     .from("time_blocks")
