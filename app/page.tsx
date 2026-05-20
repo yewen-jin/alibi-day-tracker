@@ -226,6 +226,12 @@ export default function LandingPage() {
           >
             privacy
           </Link>
+          <Link
+            href="/terms"
+            className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-alibi-teal/60 transition hover:text-alibi-pink"
+          >
+            terms
+          </Link>
         </div>
       </footer>
     </main>
