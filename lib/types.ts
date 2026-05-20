@@ -2,6 +2,7 @@ export type Mood = "joyful" | "neutral" | "flat" | "anxious" | "guilty" | "proud
 export type EffortLevel = "easy" | "medium" | "hard" | "grind"
 export type Satisfaction = "satisfied" | "mixed" | "frustrated" | "unclear"
 export type TimeBlockCategory = string
+export type AppUserRole = "user" | "superadmin"
 
 export interface Entry {
   id: string
@@ -237,6 +238,33 @@ export interface ResumeBlockInput {
 export interface GetCalendarDataInput {
   start: string
   end: string
+}
+
+export interface SuperadminOverview {
+  windowDays: number
+  windowStartedAt: string
+  totalSignedUpUsers: number
+  newUsersInWindow: number
+  activeUsersInWindow: number
+  completedTimeBlocks: number
+  loggedHours: number
+  activeTimers: number
+  companionConversations: number
+  companionMessages: number
+  companionUserMessages: number
+  companionAssistantMessages: number
+}
+
+export interface SuperadminUserUsageRow {
+  userId: string
+  email: string | null
+  role: AppUserRole
+  signedUpAt: string
+  lastActivityAt: string | null
+  completedTimeBlocks: number
+  loggedHours: number
+  companionMessages: number
+  hasActiveTimer: boolean
 }
 
 export interface CreateCategoryInput {

@@ -1,23 +1,27 @@
 "use client";
 
 import { useCallback, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   getCompanionThread,
   processCompanionMessage,
 } from "@/app/actions/process-message";
-import { deleteBlock, getCategories, saveBlock } from "@/app/actions/timer";
-import { CalendarView } from "@/components/dashboard/calendar-view";
 import {
-  BlockEditor,
-  CompanionChatPanel,
-  TimeBlockItem,
+  deleteBlock,
+  getCalendarData,
+  getCategories,
+  saveBlock,
+} from "@/app/actions/timer";
+import { CalendarView } from "@/components/dashboard/calendar-view";
+import { TimeBlockItem } from "@/components/time-block-list";
+import {
   companionMessageToChatMessage,
   createEditorState,
   resolveEditorCategory,
   type ChatMessage,
   type EditorState,
-} from "@/components/time-block-actions";
+} from "@/components/time-block-helpers";
 import type {
   CompanionThreadState,
   TimeBlock,
@@ -36,6 +40,15 @@ interface CalendarWorkspaceProps {
 }
 
 type ActivePanel = "edit" | "chat" | null;
+
+const BlockEditor = dynamic(() =>
+  import("@/components/time-block-actions").then((mod) => mod.BlockEditor),
+);
+const CompanionChatPanel = dynamic(() =>
+  import("@/components/time-block-actions").then(
+    (mod) => mod.CompanionChatPanel,
+  ),
+);
 
 export function CalendarWorkspace({
   initialBlocks,
@@ -62,6 +75,7 @@ export function CalendarWorkspace({
   const [status, setStatus] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isChatPending, startChatTransition] = useTransition();
+  const [isMonthPending, startMonthTransition] = useTransition();
 
   const replaceBlock = useCallback((block: TimeBlock) => {
     setBlocks((current) =>
@@ -81,6 +95,22 @@ export function CalendarWorkspace({
     if (result.type === "loaded") {
       setCategories(result.categories);
     }
+  }, []);
+
+  const handleMonthChange = useCallback((range: { start: string; end: string }) => {
+    setError(null);
+    startMonthTransition(async () => {
+      const result = await getCalendarData(range);
+      if (result.type === "loaded") {
+        setBlocks(result.timeBlocks);
+        setSelectedBlock(null);
+        setEditor(null);
+        setActivePanel(null);
+        return;
+      }
+
+      setError(result.message);
+    });
   }, []);
 
   const handleSave = () => {
@@ -332,6 +362,9 @@ export function CalendarWorkspace({
         </div>
       )}
       {status && <div className="alibi-banner-info">{status}</div>}
+      {isMonthPending && (
+        <div className="alibi-banner-info">loading that month.</div>
+      )}
 
       <CalendarView
         blocks={blocks}
@@ -339,6 +372,7 @@ export function CalendarWorkspace({
         detailSlot={detailSlot}
         detailMode={selectedBlock ? "expanded" : "default"}
         onSelectedBlockChange={handleCalendarSelectedBlockChange}
+        onMonthChange={handleMonthChange}
       />
     </div>
   );

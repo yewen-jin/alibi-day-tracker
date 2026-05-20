@@ -216,9 +216,17 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-alibi-blue/15 py-8 text-center">
-        <p className="text-sm font-semibold tracking-[0.04em] text-alibi-teal">
-          alibi - for the days you can't see clearly
-        </p>
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-sm font-semibold tracking-[0.04em] text-alibi-teal">
+            alibi - for the days you can't see clearly
+          </p>
+          <Link
+            href="/privacy"
+            className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-alibi-teal/60 transition hover:text-alibi-pink"
+          >
+            privacy
+          </Link>
+        </div>
       </footer>
     </main>
   )

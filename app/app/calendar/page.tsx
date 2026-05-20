@@ -1,39 +1,32 @@
 import { redirect } from "next/navigation"
 import { getCompanionThread } from "@/app/actions/process-message"
-import { createClient } from "@/lib/supabase/server"
-import type { TimeBlock, TimeBlockCategoryRecord } from "@/lib/types"
+import { getCurrentUser, syncAppUser } from "@/lib/auth/session"
+import {
+  listCompletedTimeBlocksInRange,
+  listTimeBlockCategories,
+} from "@/lib/repositories/time-blocks"
+import { getMonthRange } from "@/lib/time-block-display"
 import { TopNav } from "@/components/top-nav"
 import { CalendarWorkspace } from "@/components/calendar-workspace"
 
 export default async function CalendarPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentUser()
 
   if (!user) redirect("/auth/login")
 
-  const { data: timeBlocks } = await supabase
-    .from("time_blocks")
-    .select("*")
-    .eq("user_id", user.id)
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: false })
+  await syncAppUser(user)
 
-  const { data: categories } = await supabase
-    .from("time_block_categories")
-    .select("*")
-    .or(`user_id.is.null,user_id.eq.${user.id}`)
-    .order("is_default", { ascending: false })
-    .order("name", { ascending: true })
-
-  const companionThread = await getCompanionThread()
+  const month = getMonthRange()
+  const [timeBlocks, categories, companionThread] = await Promise.all([
+    listCompletedTimeBlocksInRange(user.id, month.input.start, month.input.end),
+    listTimeBlockCategories(user.id),
+    getCompanionThread(),
+  ])
 
   return (
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-6 p-8">
-        <TopNav userEmail={user.email ?? null} />
+        <TopNav userEmail={user.email ?? null} activeHref="/app/calendar" />
 
         <header className="px-2 sm:px-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -50,8 +43,8 @@ export default async function CalendarPage() {
         </header>
 
         <CalendarWorkspace
-          initialBlocks={(timeBlocks ?? []) as TimeBlock[]}
-          initialCategories={(categories ?? []) as TimeBlockCategoryRecord[]}
+          initialBlocks={timeBlocks}
+          initialCategories={categories}
           initialCompanionThread={companionThread ?? undefined}
         />
 

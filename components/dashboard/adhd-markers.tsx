@@ -1,5 +1,3 @@
-"use client"
-
 import type { TimeBlock, TimeBlockInsight } from "@/lib/types"
 import {
   aggregateMarkers,

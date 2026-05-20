@@ -1,10 +1,6 @@
-"use client"
-
-import { useState } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import { BookOpen, CalendarDays, Clock3, LayoutGrid, LogOut } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { BookOpen, CalendarDays, Clock3, LayoutGrid } from "lucide-react"
+import { SignOutButton } from "@/components/sign-out-button"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
@@ -16,6 +12,7 @@ const LINKS = [
 
 interface TopNavProps {
   userEmail?: string | null
+  activeHref: string
 }
 
 /**
@@ -23,19 +20,7 @@ interface TopNavProps {
  * Glass pill matching the warm-cream alibi aesthetic.
  * Used at the top of /, /dashboard, and /docs.
  */
-export function TopNav({ userEmail }: TopNavProps) {
-  const pathname = usePathname()
-  const router = useRouter()
-  const [signingOut, setSigningOut] = useState(false)
-
-  const handleSignOut = async () => {
-    setSigningOut(true)
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/")
-    router.refresh()
-  }
-
+export function TopNav({ userEmail, activeHref }: TopNavProps) {
   return (
     <nav
       aria-label="primary"
@@ -57,7 +42,7 @@ export function TopNav({ userEmail }: TopNavProps) {
       {/* Links */}
       <ul className="flex items-center gap-1">
         {LINKS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href === "/app" && pathname === "/app")
+          const active = activeHref === href
           return (
             <li key={href}>
               <Link
@@ -88,15 +73,7 @@ export function TopNav({ userEmail }: TopNavProps) {
             {userEmail}
           </span>
         )}
-        <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={signingOut}
-          aria-label="sign out"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-pink/15 hover:text-alibi-pink disabled:translate-y-0 disabled:opacity-50"
-        >
-          <LogOut className="h-3.5 w-3.5" strokeWidth={2.2} />
-        </button>
+        <SignOutButton />
       </div>
     </nav>
   )
