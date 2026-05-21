@@ -2,6 +2,7 @@ import { generateText, Output } from "ai"
 import { z } from "zod"
 import { fastModel, fastModelId } from "@/lib/ai"
 import { alibiCompanionGuide } from "@/lib/companion-voice"
+import { attachEvidenceSourceId, validateEvidenceClaims } from "@/lib/evidence-claims"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import type { TimeBlock, TimeBlockInsight } from "@/lib/types"
 
@@ -17,6 +18,11 @@ const noteInsightSchema = z.object({
   projects: z.array(z.string()).default([]),
   themes: z.array(z.string()).default([]),
   evidence_excerpt: z.string().nullable().default(null),
+  evidence_claims: z.array(z.object({
+    source_field: z.string(),
+    kind: z.string(),
+    text: z.string(),
+  })).default([]),
 })
 
 type NoteInsightOutput = z.infer<typeof noteInsightSchema>
@@ -28,7 +34,13 @@ function limitArray(values: string[] | undefined, limit = 8) {
     .slice(0, limit)
 }
 
-function normalizeInsightOutput(output: NoteInsightOutput) {
+function normalizeInsightOutput(output: NoteInsightOutput, notes: string, fallback: NonNullable<ReturnType<typeof deriveInsightFromNotes>>) {
+  const evidence_claims = validateEvidenceClaims(
+    notes,
+    "time_block_note",
+    output.evidence_claims,
+  )
+
   return {
     source: "notes" as const,
     actions: limitArray(output.actions),
@@ -42,6 +54,7 @@ function normalizeInsightOutput(output: NoteInsightOutput) {
     projects: limitArray(output.projects),
     themes: limitArray(output.themes),
     evidence_excerpt: output.evidence_excerpt?.trim().slice(0, 220) || null,
+    evidence_claims: evidence_claims.length ? evidence_claims : fallback.evidence_claims,
     model_version: fastModelId,
   }
 }
@@ -51,6 +64,7 @@ export async function generateNoteInsight(block: TimeBlock) {
   if (!notes) return null
 
   const fallback = deriveInsightFromNotes(notes)
+  if (!fallback) return null
 
   try {
     const { output } = await generateText({
@@ -61,7 +75,8 @@ export async function generateNoteInsight(block: TimeBlock) {
         alibiCompanionGuide,
         "Return structured evidence only. Do not infer beyond the note.",
         "Use short lowercase phrases. Empty arrays are fine.",
-        "The evidence_excerpt must be a short excerpt or paraphrase from the note.",
+        "The evidence_excerpt must be a short excerpt from the note.",
+        "For evidence_claims, return only exact text copied from the note and the insight field it supports.",
       ].join("\n"),
       prompt: [
         `task: ${block.task_name ?? "unnamed block"}`,
@@ -73,7 +88,7 @@ export async function generateNoteInsight(block: TimeBlock) {
       ].join("\n"),
     })
 
-    return normalizeInsightOutput(output)
+    return normalizeInsightOutput(output, notes, fallback)
   } catch {
     return fallback
   }
@@ -99,5 +114,9 @@ export async function generateTimeBlockInsightRecord(
     source_notes: block.notes?.trim() || null,
     created_at: options.createdAt ?? new Date().toISOString(),
     ...insight,
+    evidence_claims: attachEvidenceSourceId(
+      insight.evidence_claims,
+      options.noteVersionId ?? block.id,
+    ),
   }
 }

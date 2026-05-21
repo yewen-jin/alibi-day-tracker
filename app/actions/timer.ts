@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { generateNoteInsight } from "@/lib/ai-note-insights"
 import { invalidateMemoryContextForUser } from "@/lib/memory-context"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
+import { attachEvidenceSourceId } from "@/lib/evidence-claims"
 import { createClient } from "@/lib/supabase/server"
 import {
   deleteTimeBlockFromGoogleCalendar,
@@ -458,6 +459,10 @@ async function storeNoteInsight(
         user_id: userId,
         source_notes: normalizeNotes(timeBlock.notes),
         ...insight,
+        evidence_claims: attachEvidenceSourceId(
+          insight.evidence_claims,
+          noteVersionId ?? timeBlock.id,
+        ),
       },
       { onConflict: "time_block_id" },
     )

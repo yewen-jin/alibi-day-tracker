@@ -79,6 +79,7 @@ function makeNoteInsight(overrides: Partial<TimeBlockInsight> = {}): TimeBlockIn
     projects: ["launch"],
     themes: ["friction", "satisfaction"],
     evidence_excerpt: "the detour helped clarify the launch plan",
+    evidence_claims: [],
     model_version: "test",
     created_at: "2026-05-05T10:00:00.000Z",
     ...overrides,
@@ -118,6 +119,7 @@ function makeChatInsight(overrides: Partial<CompanionMessageInsight> = {}): Comp
     mismatch_signals: [],
     themes: ["intention", "useful drift"],
     evidence_excerpt: "i meant to write the launch notes but got sidetracked usefully",
+    evidence_claims: [],
     model_version: "test",
     created_at: "2026-05-05T11:00:00.000Z",
     ...overrides,
@@ -186,5 +188,51 @@ describe("formatMemoryContext", () => {
     expect(result).toContain("chat-derived insights")
     expect(result).toContain("intended=meant to write the launch notes")
     expect(result).toContain("recent visible messages")
+  })
+
+  it("includes claim-level evidence when available", () => {
+    const range = inferMemoryRange("what pattern do you see today?", null, now)
+    const context: Omit<CompanionMemoryContext, "evidenceText"> = {
+      scope: range.scope,
+      range,
+      blocks: [],
+      noteInsights: [
+        makeNoteInsight({
+          evidence_claims: [
+            {
+              id: "claim-1",
+              source_type: "time_block_note",
+              source_id: "block-1",
+              source_field: "friction_points",
+              kind: "friction",
+              text: "got distracted",
+              context_excerpt: "I got distracted, but the detour helped",
+            },
+          ],
+        }),
+      ],
+      linkedMessages: [],
+      chatInsights: [
+        makeChatInsight({
+          evidence_claims: [
+            {
+              id: "claim-2",
+              source_type: "companion_message",
+              source_id: "message-1",
+              source_field: "intended_actions",
+              kind: "action",
+              text: "meant to write the launch notes",
+              context_excerpt: "i meant to write the launch notes but got sidetracked",
+            },
+          ],
+        }),
+      ],
+      recentMessages: [],
+    }
+
+    const result = formatMemoryContext(context)
+
+    expect(result).toContain('claim_evidence=friction_points="got distracted"')
+    expect(result).toContain('intended_actions="meant to write the launch notes"')
   })
 })

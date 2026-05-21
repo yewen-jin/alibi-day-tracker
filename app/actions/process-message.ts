@@ -739,6 +739,7 @@ async function upsertCompanionMessageInsight(
       mismatch_signals: insight.mismatch_signals,
       themes: insight.themes,
       evidence_excerpt: insight.evidence_excerpt,
+      evidence_claims: insight.evidence_claims,
       model_version: insight.model_version,
     },
     { onConflict: "message_id" },

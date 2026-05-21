@@ -6,6 +6,7 @@ import type {
   TimeBlock,
   TimeBlockCategoryRecord,
   TimeBlockInsight,
+  TimeBlockNoteVersion,
 } from "@/lib/types";
 
 export async function getActiveTimerForUser(
@@ -96,4 +97,20 @@ export async function listTimeBlockInsightsForBlocks(
     .execute();
 
   return rows as TimeBlockInsight[];
+}
+
+export async function listTimeBlockNoteVersionsByIds(
+  userId: string,
+  noteVersionIds: string[],
+): Promise<TimeBlockNoteVersion[]> {
+  if (noteVersionIds.length === 0) return [];
+
+  const rows = await getDb()
+    .selectFrom("time_block_note_versions")
+    .selectAll()
+    .where("user_id", "=", userId)
+    .where("id", "in", noteVersionIds)
+    .execute();
+
+  return rows as TimeBlockNoteVersion[];
 }

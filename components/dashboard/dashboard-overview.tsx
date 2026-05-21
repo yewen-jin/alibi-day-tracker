@@ -2,6 +2,7 @@ import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 import type {
   CompanionMessageInsight,
+  CompanionMessage,
   TimeBlock,
   TimeBlockCategoryRecord,
   TimeBlockInsight,
@@ -16,6 +17,8 @@ interface DashboardOverviewProps {
   insights: TimeBlockInsight[]
   categories?: TimeBlockCategoryRecord[]
   chatInsights?: CompanionMessageInsight[]
+  chatMessages?: CompanionMessage[]
+  noteVersionCreatedAtById?: Map<string, string>
   emptyHref?: string
   emptyAction?: string
 }
@@ -25,6 +28,8 @@ export function DashboardOverview({
   insights,
   categories,
   chatInsights = [],
+  chatMessages = [],
+  noteVersionCreatedAtById,
   emptyHref = "/app",
   emptyAction = "start tracking",
 }: DashboardOverviewProps) {
@@ -66,7 +71,7 @@ export function DashboardOverview({
             <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.4} />
           </Link>
         </section>
-        <ChatMirror blocks={blocks} insights={chatInsights} />
+        <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
       </div>
     )
   }
@@ -74,8 +79,12 @@ export function DashboardOverview({
   return (
     <div className="space-y-5">
       <StatsOverview blocks={blocks} />
-      <NotesMirror blocks={blocks} insights={insights} />
-      <ChatMirror blocks={blocks} insights={chatInsights} />
+      <NotesMirror
+        blocks={blocks}
+        insights={insights}
+        noteVersionCreatedAtById={noteVersionCreatedAtById}
+      />
+      <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
       <AdhdMarkers blocks={blocks} insights={insights} />
     </div>
   )

@@ -33,4 +33,56 @@ describe("deriveChatInsightFromMessage", () => {
     expect(result?.avoided_or_deferred).toHaveLength(0)
     expect(result?.mismatch_signals).toHaveLength(0)
   })
+
+  it("creates exact claims for chat signals", () => {
+    const message = [
+      "i meant to finish invoices but deferred the receipt cleanup.",
+      "got stuck on reconciliation and felt anxious.",
+      "got distracted but fixed the upload bug.",
+      "felt like i did nothing but actually finished the draft.",
+    ].join(" ")
+
+    const result = deriveChatInsightFromMessage(message)
+    const claims = result?.evidence_claims ?? []
+
+    expect(claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_type: "companion_message",
+          source_field: "intended_actions",
+          kind: "action",
+          text: "i meant to finish invoices but deferred the receipt cleanup",
+        }),
+        expect.objectContaining({
+          source_field: "avoided_or_deferred",
+          kind: "avoidance",
+          text: "deferred the receipt cleanup",
+        }),
+        expect.objectContaining({
+          source_field: "friction_points",
+          kind: "friction",
+          text: "stuck on reconciliation and felt anxious",
+        }),
+        expect.objectContaining({
+          source_field: "emotional_signals",
+          kind: "emotion",
+          text: "felt anxious",
+        }),
+        expect.objectContaining({
+          source_field: "useful_drift",
+          kind: "useful_drift",
+          text: "got distracted but fixed the upload bug",
+        }),
+        expect.objectContaining({
+          source_field: "mismatch_signals",
+          kind: "mismatch",
+          text: "felt like i did nothing but actually finished the draft",
+        }),
+      ]),
+    )
+
+    for (const claim of claims) {
+      expect(message).toContain(claim.text)
+    }
+  })
 })

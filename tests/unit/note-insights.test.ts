@@ -52,6 +52,56 @@ describe("deriveInsightFromNotes", () => {
     expect(result?.actions.length).toBeGreaterThan(0)
   })
 
+  it("creates exact claims for note signals", () => {
+    const note = [
+      "worked on invoices and got stuck on the reconciliation.",
+      "I avoided receipt cleanup, lost track of time, felt proud, and maybe wasted the morning.",
+    ].join(" ")
+
+    const result = deriveInsightFromNotes(note)
+    const claims = result?.evidence_claims ?? []
+
+    expect(claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_type: "time_block_note",
+          source_field: "actions",
+          kind: "action",
+          text: "worked on invoices and got stuck on the reconciliation",
+        }),
+        expect.objectContaining({
+          source_field: "friction_points",
+          kind: "friction",
+          text: "stuck",
+        }),
+        expect.objectContaining({
+          source_field: "avoidance_signals",
+          kind: "avoidance",
+          text: "avoided",
+        }),
+        expect.objectContaining({
+          source_field: "hyperfocus_signals",
+          kind: "hyperfocus",
+          text: "lost track of time",
+        }),
+        expect.objectContaining({
+          source_field: "satisfaction_signals",
+          kind: "satisfaction",
+          text: "proud",
+        }),
+        expect.objectContaining({
+          source_field: "uncertainty_signals",
+          kind: "uncertainty",
+          text: "maybe",
+        }),
+      ]),
+    )
+
+    for (const claim of claims) {
+      expect(note).toContain(claim.text)
+    }
+  })
+
   it("truncates long notes for evidence_excerpt", () => {
     const long = "x".repeat(200)
     const result = deriveInsightFromNotes(long)

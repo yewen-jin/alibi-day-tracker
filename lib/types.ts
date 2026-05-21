@@ -74,6 +74,18 @@ export interface TimeBlockNoteVersion {
   created_at: string
 }
 
+export interface EvidenceClaim {
+  id: string
+  source_type: "time_block_note" | "companion_message"
+  source_id: string
+  source_field: string
+  kind: string
+  text: string
+  context_excerpt: string
+  start_index?: number
+  end_index?: number
+}
+
 export interface TimeBlockInsight {
   id: string
   time_block_id: string
@@ -92,6 +104,7 @@ export interface TimeBlockInsight {
   projects: string[]
   themes: string[]
   evidence_excerpt: string | null
+  evidence_claims: EvidenceClaim[]
   model_version: string
   created_at: string
 }
@@ -114,6 +127,7 @@ export interface CompanionMessageInsight {
   mismatch_signals: string[]
   themes: string[]
   evidence_excerpt: string | null
+  evidence_claims: EvidenceClaim[]
   model_version: string
   created_at: string
 }

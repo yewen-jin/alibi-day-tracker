@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation"
-import { deriveCompanionMessageInsightRecord } from "@/lib/chat-insights"
+import {
+  deriveChatInsightFromMessage,
+  deriveCompanionMessageInsightRecord,
+} from "@/lib/chat-insights"
+import { attachEvidenceSourceId } from "@/lib/evidence-claims"
+import { deriveInsightFromNotes } from "@/lib/note-insights"
 import { getCurrentUser, syncAppUser } from "@/lib/auth/session"
 import {
   listRecentCompanionMessageInsights,
@@ -9,6 +14,7 @@ import {
   listRecentCompletedTimeBlocks,
   listTimeBlockCategories,
   listTimeBlockInsightsForBlocks,
+  listTimeBlockNoteVersionsByIds,
 } from "@/lib/repositories/time-blocks"
 import type {
   CompanionConversation,
@@ -40,6 +46,47 @@ export default async function DashboardPage() {
   ])
   const blockIds = safeBlocks.map((block) => block.id)
   const safeInsights = await listTimeBlockInsightsForBlocks(user.id, blockIds)
+  const noteVersionIds = Array.from(
+    new Set(
+      safeInsights
+        .map((insight) => insight.note_version_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  const noteVersions = await listTimeBlockNoteVersionsByIds(user.id, noteVersionIds)
+  const noteVersionCreatedAtById = new Map(
+    noteVersions.map((version) => [version.id, version.created_at]),
+  )
+  const hydratedNoteInsights = safeInsights.map((insight) => {
+    if (insight.evidence_claims?.length || !insight.source_notes?.trim()) {
+      return insight
+    }
+
+    const derived = deriveInsightFromNotes(insight.source_notes)
+    return {
+      ...insight,
+      evidence_claims: attachEvidenceSourceId(
+        derived?.evidence_claims ?? [],
+        insight.note_version_id ?? insight.time_block_id,
+      ),
+    }
+  })
+  const messagesById = new Map(userMessages.map((message) => [message.id, message]))
+  const hydratedChatInsights = safeChatInsights.map((insight) => {
+    if (insight.evidence_claims?.length) {
+      return insight
+    }
+
+    const message = messagesById.get(insight.message_id)
+    const derived = deriveChatInsightFromMessage(message?.content ?? null)
+    return {
+      ...insight,
+      evidence_claims: attachEvidenceSourceId(
+        derived?.evidence_claims ?? [],
+        insight.message_id,
+      ),
+    }
+  })
   const messageBackfillInsights = userMessages
     .map((message) =>
       deriveCompanionMessageInsightRecord(
@@ -57,10 +104,10 @@ export default async function DashboardPage() {
     )
     .filter((insight): insight is CompanionMessageInsight => Boolean(insight))
   const insightMessageIds = new Set(
-    safeChatInsights.map((insight) => insight.message_id),
+    hydratedChatInsights.map((insight) => insight.message_id),
   )
   const mergedChatInsights = [
-    ...safeChatInsights,
+    ...hydratedChatInsights,
     ...messageBackfillInsights.filter(
       (insight) => !insightMessageIds.has(insight.message_id),
     ),
@@ -87,9 +134,11 @@ export default async function DashboardPage() {
 
         <DashboardOverview
           blocks={safeBlocks}
-          insights={safeInsights}
+          insights={hydratedNoteInsights}
           categories={safeCategories.length > 0 ? safeCategories : undefined}
           chatInsights={mergedChatInsights}
+          chatMessages={userMessages}
+          noteVersionCreatedAtById={noteVersionCreatedAtById}
         />
 
         <footer className="text-center text-sm font-semibold tracking-[0.04em] text-alibi-teal">
