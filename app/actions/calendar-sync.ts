@@ -34,7 +34,9 @@ export async function retryGoogleCalendarSync() {
   let firstError: string | null = null;
 
   for (const block of blocks) {
-    const result = await syncTimeBlockToGoogleCalendar(user.id, block);
+    const result = await syncTimeBlockToGoogleCalendar(user.id, block, {
+      force: true,
+    });
     if (result.type === "synced") synced += 1;
     if (result.type === "error") {
       failed += 1;
