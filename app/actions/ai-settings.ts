@@ -16,6 +16,27 @@ import {
 } from "@/lib/ai-settings";
 import { requireSyncedUser } from "@/lib/auth/session";
 
+const AI_SETTINGS_TEST_MAX_OUTPUT_TOKENS = 256;
+const AI_SETTINGS_TEST_PROMPT = "Reply with exactly the lowercase word ok and no punctuation.";
+
+function providerOptionsForModel(modelId: string) {
+  const normalized = modelId.toLowerCase();
+  const supportsReasoningEffort =
+    normalized.includes("gpt-5") ||
+    /\bo[134](?:-|$)/.test(normalized) ||
+    normalized.includes("/o1") ||
+    normalized.includes("/o3") ||
+    normalized.includes("/o4");
+
+  return supportsReasoningEffort
+    ? {
+        openaiCompatible: {
+          reasoningEffort: "minimal",
+        },
+      }
+    : undefined;
+}
+
 function stringifyProviderDetail(value: unknown): string | null {
   if (!value) return null;
 
@@ -54,7 +75,11 @@ function stringifyProviderDetail(value: unknown): string | null {
   return null;
 }
 
-function describeAiTestError(error: unknown, models: Awaited<ReturnType<typeof resolveAiModelsForUser>>) {
+function describeAiTestError(
+  error: unknown,
+  models?: Awaited<ReturnType<typeof resolveAiModelsForUser>>,
+  modelId?: string,
+) {
   const record =
     typeof error === "object" && error !== null
       ? (error as Record<string, unknown>)
@@ -71,7 +96,7 @@ function describeAiTestError(error: unknown, models: Awaited<ReturnType<typeof r
     stringifyProviderDetail(record.cause);
   const message = error instanceof Error ? error.message : "model test failed.";
   const parts = [
-    `${models.provider} test failed for ${models.fastModelId}`,
+    models ? `${models.provider} test failed for ${modelId ?? models.fastModelId}` : "AI settings test failed",
     status,
     detail ?? message,
   ].filter(Boolean);
@@ -191,35 +216,65 @@ export async function deleteAiSettings() {
 }
 
 export async function testAiSettings() {
-  const user = await requireSyncedUser();
-  const models = await resolveAiModelsForUser(user.id);
-
-  if (models.mode === "hosted" && !process.env.OPENROUTER_API_KEY) {
-    const message = "built-in OpenRouter API key is not configured on the server.";
-    await markAiSettingsTested(user.id, { ok: false, error: message }).catch(() => undefined);
-    revalidatePath("/app/settings");
-    return { type: "error" as const, message };
-  }
+  let models: Awaited<ReturnType<typeof resolveAiModelsForUser>> | undefined;
+  let currentModelId: string | undefined;
 
   try {
-    const { text } = await generateText({
+    const user = await requireSyncedUser();
+    models = await resolveAiModelsForUser(user.id);
+
+    if (models.mode === "hosted" && !process.env.OPENROUTER_API_KEY) {
+      const message = "built-in OpenRouter API key is not configured on the server.";
+      await markAiSettingsTested(user.id, { ok: false, error: message }).catch(() => undefined);
+      revalidatePath("/app/settings");
+      return { type: "error" as const, message };
+    }
+
+    currentModelId = models.fastModelId;
+    const fastResult = await generateText({
       model: models.fastModel,
-      prompt: "Reply with exactly: ok",
-      maxOutputTokens: 16,
+      prompt: AI_SETTINGS_TEST_PROMPT,
+      maxOutputTokens: AI_SETTINGS_TEST_MAX_OUTPUT_TOKENS,
+      providerOptions: providerOptionsForModel(models.fastModelId),
     });
 
-    const ok = text.trim().toLowerCase().includes("ok");
+    if (!fastResult.text.trim().toLowerCase().includes("ok")) {
+      const actual = fastResult.text.trim();
+      const message = actual
+        ? `fast model test response did not include ok. response: ${actual.slice(0, 200)}`
+        : "fast model test returned no visible text.";
+      await markAiSettingsTested(user.id, { ok: false, error: message }).catch(() => undefined);
+      revalidatePath("/app/settings");
+      return { type: "error" as const, message };
+    }
+
+    currentModelId = models.companionModelId;
+    const companionResult = await generateText({
+      model: models.companionModel,
+      prompt: AI_SETTINGS_TEST_PROMPT,
+      maxOutputTokens: AI_SETTINGS_TEST_MAX_OUTPUT_TOKENS,
+      providerOptions: providerOptionsForModel(models.companionModelId),
+    });
+
+    const ok = companionResult.text.trim().toLowerCase().includes("ok");
+    const actual = companionResult.text.trim();
+    const failure = actual
+      ? `companion model test response did not include ok. response: ${actual.slice(0, 200)}`
+      : "companion model test returned no visible text.";
     await markAiSettingsTested(
       user.id,
-      ok ? { ok: true } : { ok: false, error: "test response did not include ok." },
+      ok ? { ok: true } : { ok: false, error: failure },
     ).catch(() => undefined);
     revalidatePath("/app/settings");
     return ok
       ? { type: "tested" as const, provider: models.provider }
-      : { type: "error" as const, message: "test response did not include ok." };
+      : { type: "error" as const, message: failure };
   } catch (error) {
-    const message = describeAiTestError(error, models);
-    await markAiSettingsTested(user.id, { ok: false, error: message }).catch(() => undefined);
+    const message = describeAiTestError(error, models, currentModelId);
+    const user = await requireSyncedUser().catch(() => null);
+    if (user) {
+      await markAiSettingsTested(user.id, { ok: false, error: message }).catch(() => undefined);
+    }
     revalidatePath("/app/settings");
     return { type: "error" as const, message };
   }

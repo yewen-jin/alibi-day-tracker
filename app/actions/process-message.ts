@@ -379,6 +379,91 @@ function looksLikeLogAttempt(
   );
 }
 
+function stringifyAiErrorDetail(value: unknown): string | null {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return stringifyAiErrorDetail(parsed) ?? trimmed.slice(0, 360);
+    } catch {
+      return trimmed.slice(0, 360);
+    }
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const nestedMessage =
+      record.message ??
+      record.error ??
+      (typeof record.error === "object" && record.error
+        ? (record.error as Record<string, unknown>).message
+        : null);
+
+    if (typeof nestedMessage === "string" && nestedMessage.trim()) {
+      return nestedMessage.trim().slice(0, 360);
+    }
+
+    try {
+      return JSON.stringify(value).slice(0, 360);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function describeModelFailure(error: unknown, provider: string, modelId: string) {
+  const record =
+    typeof error === "object" && error !== null
+      ? (error as Record<string, unknown>)
+      : {};
+  const status =
+    typeof record.statusCode === "number"
+      ? `HTTP ${record.statusCode}`
+      : typeof record.status === "number"
+        ? `HTTP ${record.status}`
+        : null;
+  const detail =
+    stringifyAiErrorDetail(record.responseBody) ??
+    stringifyAiErrorDetail(record.data) ??
+    stringifyAiErrorDetail(record.cause);
+  const message = error instanceof Error ? error.message : "model call failed.";
+
+  return [
+    `${provider} companion model failed for ${modelId}`,
+    status,
+    detail ?? message,
+  ].filter(Boolean).join(": ");
+}
+
+function lowReasoningProviderOptions(provider: string, modelId: string) {
+  const normalized = modelId.toLowerCase();
+  const supportsReasoningEffort =
+    normalized.includes("gpt-5") ||
+    /\bo[134](?:-|$)/.test(normalized) ||
+    normalized.includes("/o1") ||
+    normalized.includes("/o3") ||
+    normalized.includes("/o4");
+
+  if (!supportsReasoningEffort) {
+    return undefined;
+  }
+
+  const options = {
+    reasoningEffort: "minimal",
+  };
+
+  return {
+    openaiCompatible: options,
+    [provider]: options,
+  };
+}
+
 function draftHasClarificationInfo(draft: CompanionDraft | null | undefined) {
   if (!draft) {
     return false;
@@ -949,6 +1034,7 @@ async function makeSavedBlockReply({
   try {
     const { text } = await generateText({
       model: models.companionModel,
+      providerOptions: lowReasoningProviderOptions(models.provider, models.companionModelId),
       system: [
         "You are Alibi. The time block has already been saved in the database.",
         alibiCompanionGuide,
@@ -1001,6 +1087,7 @@ async function analyseBlocks({
   try {
     const { text } = await generateText({
       model: models.companionModel,
+      providerOptions: lowReasoningProviderOptions(models.provider, models.companionModelId),
       system: [
         "You are Alibi: the friend who remembers the user's day so they don't have to defend it to themselves.",
         alibiCompanionGuide,
@@ -1063,6 +1150,7 @@ async function companionChat({
   try {
     const { text } = await generateText({
       model: models.companionModel,
+      providerOptions: lowReasoningProviderOptions(models.provider, models.companionModelId),
       system: [
         "You are Alibi: a conversational witness for the user's day.",
         alibiCompanionGuide,
@@ -1083,8 +1171,8 @@ async function companionChat({
     });
 
     return text.trim() || "i'm here. tell me the shape of it.";
-  } catch {
-    return "i'm here. tell me the shape of it.";
+  } catch (error) {
+    return describeModelFailure(error, models.provider, models.companionModelId);
   }
 }
 
@@ -1103,6 +1191,7 @@ async function timeBlockCompanionChat(
   try {
     const { text } = await generateText({
       model: models.companionModel,
+      providerOptions: lowReasoningProviderOptions(models.provider, models.companionModelId),
       system: [
         "You are Alibi: a reflective companion for one saved time block.",
         alibiCompanionGuide,
@@ -1125,8 +1214,8 @@ async function timeBlockCompanionChat(
     });
 
     return text.trim() || "that block has more texture than it first looks.";
-  } catch {
-    return "that block has more texture than it first looks.";
+  } catch (error) {
+    return describeModelFailure(error, models.provider, models.companionModelId);
   }
 }
 
