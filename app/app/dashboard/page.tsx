@@ -21,9 +21,17 @@ import type {
   CompanionMessageInsight,
 } from "@/lib/types"
 import { TopNav } from "@/components/top-nav"
-import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
+import { DashboardTabs } from "@/components/dashboard/dashboard-tabs"
+import { dashboardSkills, getDashboardSkill } from "@/lib/skills/registry"
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>
+}) {
+  const { view } = await searchParams
+  const activeSkill = getDashboardSkill(view)
+
   const user = await getCurrentUser()
 
   if (!user) redirect("/")
@@ -124,7 +132,7 @@ export default async function DashboardPage() {
               the dashboard
             </h1>
             <span className="rounded-full bg-alibi-pink/15 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-alibi-pink">
-              what you&apos;ve been doing
+              {activeSkill.tagline}
             </span>
           </div>
           <p className="mt-1 text-base font-semibold leading-relaxed text-alibi-teal">
@@ -132,14 +140,16 @@ export default async function DashboardPage() {
           </p>
         </header>
 
-        <DashboardOverview
-          blocks={safeBlocks}
-          insights={hydratedNoteInsights}
-          categories={safeCategories.length > 0 ? safeCategories : undefined}
-          chatInsights={mergedChatInsights}
-          chatMessages={userMessages}
-          noteVersionCreatedAtById={noteVersionCreatedAtById}
-        />
+        <DashboardTabs skills={dashboardSkills} activeSlug={activeSkill.slug} />
+
+        {activeSkill.render({
+          blocks: safeBlocks,
+          noteInsights: hydratedNoteInsights,
+          chatInsights: mergedChatInsights,
+          chatMessages: userMessages,
+          categories: safeCategories,
+          noteVersionCreatedAtById,
+        })}
 
         <footer className="text-center text-sm font-semibold tracking-[0.04em] text-alibi-teal">
           alibi — for the days you can&apos;t see clearly
