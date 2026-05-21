@@ -1,6 +1,6 @@
-import { generateText, Output } from "ai"
+import { generateText, Output, type LanguageModel } from "ai"
 import { z } from "zod"
-import { companionModel, companionModelId } from "@/lib/ai"
+import { fastModel, fastModelId } from "@/lib/ai"
 import { alibiCompanionGuide } from "@/lib/companion-voice"
 import type {
   CompanionConversation,
@@ -157,18 +157,26 @@ function normalizeInsightOutput(
     evidence_excerpt:
       output.evidence_excerpt?.trim().slice(0, 220) ||
       fallback.evidence_excerpt,
-    model_version: companionModelId,
+    model_version: fastModelId,
   }
 }
 
-export async function generateChatInsight(messageText: string) {
+export async function generateChatInsight(
+  messageText: string,
+  options: {
+    model?: LanguageModel
+    modelVersion?: string
+    providerOptions?: Parameters<typeof generateText>[0]["providerOptions"]
+  } = {},
+) {
   const fallback = deriveChatInsightFromMessage(messageText)
   if (!fallback) return null
 
   try {
     const { output } = await generateText({
-      model: companionModel,
+      model: options.model ?? fastModel,
       output: Output.object({ schema: chatInsightSchema }),
+      providerOptions: options.providerOptions,
       system: [
         "Extract a grounded Alibi chat mirror insight from one user message.",
         alibiCompanionGuide,
@@ -181,7 +189,10 @@ export async function generateChatInsight(messageText: string) {
       prompt: ["User message:", messageText.slice(0, 3000)].join("\n"),
     })
 
-    return normalizeInsightOutput(output, fallback)
+    return {
+      ...normalizeInsightOutput(output, fallback),
+      model_version: options.modelVersion ?? fastModelId,
+    }
   } catch {
     return fallback
   }
@@ -197,11 +208,14 @@ export async function generateCompanionMessageInsightRecord(
   options: {
     id?: string
     createdAt?: string
+    model?: LanguageModel
+    modelVersion?: string
+    providerOptions?: Parameters<typeof generateText>[0]["providerOptions"]
   } = {},
 ): Promise<CompanionMessageInsight | null> {
   if (message.role !== "user") return null
 
-  const insight = await generateChatInsight(message.content)
+  const insight = await generateChatInsight(message.content, options)
   if (!insight) return null
 
   return buildCompanionMessageInsightRecord(message, conversation, insight, options)

@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai"
 import { z } from "zod"
-import { companionModel, companionModelId } from "@/lib/ai"
+import { fastModel, fastModelId } from "@/lib/ai"
 import { alibiCompanionGuide } from "@/lib/companion-voice"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import type { TimeBlock, TimeBlockInsight } from "@/lib/types"
@@ -42,7 +42,7 @@ function normalizeInsightOutput(output: NoteInsightOutput) {
     projects: limitArray(output.projects),
     themes: limitArray(output.themes),
     evidence_excerpt: output.evidence_excerpt?.trim().slice(0, 220) || null,
-    model_version: companionModelId,
+    model_version: fastModelId,
   }
 }
 
@@ -54,7 +54,7 @@ export async function generateNoteInsight(block: TimeBlock) {
 
   try {
     const { output } = await generateText({
-      model: companionModel,
+      model: fastModel,
       output: Output.object({ schema: noteInsightSchema }),
       system: [
         "Extract a grounded note insight for one saved Alibi time block.",

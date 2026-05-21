@@ -125,6 +125,23 @@ const SECTIONS: WikiSection[] = [
       "future retrieval should cite source records instead of producing unsupported summaries.",
     ],
   },
+  {
+    id: "ai-models",
+    icon: Sparkles,
+    title: "ai models, providers, and cost",
+    intro:
+      "alibi runs on two model slots. a fast slot handles routing, extraction, and acknowledgments. a companion slot writes the voice that talks back. you can keep the hosted defaults or bring your own keys from /app/settings.",
+    points: [
+      "hosted default fast model is openai gpt-4.1-nano. it classifies what you typed and pulls structured fields like time and category.",
+      "hosted default companion model is anthropic claude haiku 4.5. it writes the reply and matches the alibi voice guide.",
+      "non-visible work like chat-insight and note-insight extraction runs on the fast model so the bill stays small.",
+      "chat-insight extraction is deferred past the response, so the reply ships first and the derived insight lands a moment later.",
+      "the analyse path uses the fast model to gather evidence from the memory packet, then the companion model rewrites only that summary in the alibi voice. the long evidence packet never pays companion-tier price.",
+      "on direct anthropic profiles, the system prompt and voice guide are sent with ephemeral prompt caching, so repeat turns bill cached input at a fraction of the normal rate.",
+      "settings ships presets for openrouter, openai, anthropic, deepseek, qwen (dashscope), zhipu glm, and moonshot kimi. any openai-compatible base url also works, including a local llama.cpp or vllm server.",
+      "your provider key is encrypted at rest and is only used in the request that needs it. nothing about your messages is shared with alibi infrastructure beyond that request.",
+    ],
+  },
 ]
 
 const NOTE_EXAMPLES = [

@@ -95,6 +95,19 @@ function describeAiTestError(
     stringifyProviderDetail(record.data) ??
     stringifyProviderDetail(record.cause);
   const message = error instanceof Error ? error.message : "model test failed.";
+
+  if (
+    message.includes("unable to authenticate data") ||
+    message.includes("Unsupported state or unable to authenticate data") ||
+    message.includes("Unsupported encrypted secret payload")
+  ) {
+    return "AI settings test failed: saved custom API key cannot be decrypted. Re-save or replace that provider key in settings.";
+  }
+
+  if (message.includes("ALIBI_SECRET_ENCRYPTION_KEY")) {
+    return `AI settings test failed: ${message}`;
+  }
+
   const parts = [
     models ? `${models.provider} test failed for ${modelId ?? models.fastModelId}` : "AI settings test failed",
     status,
@@ -221,7 +234,7 @@ export async function testAiSettings() {
 
   try {
     const user = await requireSyncedUser();
-    models = await resolveAiModelsForUser(user.id);
+    models = await resolveAiModelsForUser(user.id, { throwOnSecretError: true });
 
     if (models.mode === "hosted" && !process.env.OPENROUTER_API_KEY) {
       const message = "built-in OpenRouter API key is not configured on the server.";

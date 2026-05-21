@@ -2,7 +2,7 @@
 
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { companionModelId } from "@/lib/ai";
+import { anthropicCacheOptions, companionModelId } from "@/lib/ai";
 import { resolveAiModelsForUser, type ResolvedAiModels } from "@/lib/ai-settings";
 import {
   CATEGORIES,
@@ -450,17 +450,23 @@ function lowReasoningProviderOptions(provider: string, modelId: string) {
     normalized.includes("/o3") ||
     normalized.includes("/o4");
 
-  if (!supportsReasoningEffort) {
-    return undefined;
-  }
+  const reasoning = supportsReasoningEffort
+    ? {
+        openaiCompatible: { reasoningEffort: "minimal" },
+        [provider]: { reasoningEffort: "minimal" },
+      }
+    : undefined;
 
-  const options = {
-    reasoningEffort: "minimal",
-  };
+  // Anthropic ephemeral prompt cache. Only applied when targeting the
+  // Anthropic provider directly (not OpenRouter). The system block in each
+  // companion call carries the cache_control marker via providerOptions.
+  const cache = anthropicCacheOptions(provider);
+
+  if (!reasoning && !cache) return undefined;
 
   return {
-    openaiCompatible: options,
-    [provider]: options,
+    ...(reasoning ?? {}),
+    ...(cache ?? {}),
   };
 }
 
@@ -698,17 +704,26 @@ async function upsertCompanionMessageInsight(
   supabase: Supabase,
   message: CompanionMessage,
   conversation: CompanionConversation,
+  models: ResolvedAiModels,
 ) {
   const insight = await generateCompanionMessageInsightRecord(
     message,
     conversation,
+    {
+      model: models.fastModel,
+      modelVersion: models.fastModelId,
+      providerOptions: lowReasoningProviderOptions(
+        models.provider,
+        models.fastModelId,
+      ),
+    },
   );
 
   if (!insight) {
     return;
   }
 
-  await supabase.from("companion_message_insights").upsert(
+  const { error } = await supabase.from("companion_message_insights").upsert(
     {
       user_id: insight.user_id,
       message_id: insight.message_id,
@@ -728,6 +743,14 @@ async function upsertCompanionMessageInsight(
     },
     { onConflict: "message_id" },
   );
+
+  if (error) {
+    console.error("failed to upsert companion message insight", {
+      messageId: message.id,
+      userId: message.user_id,
+      error: error.message,
+    });
+  }
 }
 
 async function getPendingDraft(
@@ -880,6 +903,8 @@ async function routeMessage(
         "Use start_timer or stop_timer for explicit timer control.",
         "Use analyse_blocks when they ask what they did, how long they spent, patterns, or reassurance from saved records.",
         "Use clarify only when the new message answers a prior clarification but is still incomplete.",
+        "",
+        "If a 'Prior draft' is provided, the user may be answering an earlier clarification. Extract any new details from the user message that complete the draft (time range, duration, task name, category, mood, etc.) and return them populated. Use the prior draft's existing values implicitly by only filling in what is newly present. If the message is clearly continuing a draft but still incomplete, set intent=clarify.",
         "",
         "Schema:",
         "{",
@@ -1058,6 +1083,12 @@ async function makeSavedBlockReply({
   }
 }
 
+const analysisSynthSchema = z.object({
+  summary: z.string().default(""),
+  key_evidence: z.array(z.string()).default([]),
+  pattern_hint: z.string().nullable().default(null),
+});
+
 async function analyseBlocks({
   models,
   supabase,
@@ -1084,6 +1115,42 @@ async function analyseBlocks({
     recentMessages,
   });
 
+  // Two-tier analysis: the fast model digests the (potentially large) memory
+  // packet into a compact JSON synthesis; the companion model only rewrites
+  // that synthesis into the Alibi voice. This keeps the long evidence cost on
+  // the cheap tier and pays companion-tier price only on a small input.
+  let synth: z.infer<typeof analysisSynthSchema> | null = null;
+  try {
+    const { output } = await generateText({
+      model: models.fastModel,
+      output: Output.object({ schema: analysisSynthSchema }),
+      system: [
+        "Extract a grounded evidence synthesis from an Alibi memory packet.",
+        "Use ONLY the supplied memory context. Do not invent unsaved work.",
+        "Evidence priority: time block notes, time block metadata, note-derived insights, linked chat, chat-derived insights, then recent visible chat.",
+        "Each key_evidence item must be a short verbatim or near-verbatim excerpt with a date/time reference where possible.",
+        "If the record is empty, return empty arrays and an empty summary.",
+      ].join("\n"),
+      prompt: [
+        `User asked: ${message}`,
+        `Pending draft, if any: ${JSON.stringify(draft ?? null)}`,
+        `Memory range: ${memory.range.label}`,
+        "",
+        "Memory context:",
+        memory.evidenceText,
+      ].join("\n"),
+    });
+    synth = output;
+  } catch {
+    synth = null;
+  }
+
+  if (!synth || (!synth.summary.trim() && synth.key_evidence.length === 0)) {
+    if (memory.blocks.length === 0 && memory.chatInsights.length === 0) {
+      return `nothing on the record for ${memory.range.label}.`;
+    }
+  }
+
   try {
     const { text } = await generateText({
       model: models.companionModel,
@@ -1091,19 +1158,16 @@ async function analyseBlocks({
       system: [
         "You are Alibi: the friend who remembers the user's day so they don't have to defend it to themselves.",
         alibiCompanionGuide,
-        "Answer using ONLY the provided memory context.",
-        "Use evidence in this order: time block notes, time block metadata, note-derived insights, linked chat, chat-derived insights, then recent visible chat.",
-        "When describing a pattern, cite the note, time, or chat evidence that supports it.",
-        "Chat-derived context can name intention, friction, emotion, useful drift, and mismatch, but it must not override a time block note unless the user explicitly says the block record is wrong.",
-        "Stay under 90 words.",
-        "Do not mention entries. Do not invent unsaved work. Do not give productivity advice.",
+        "Rewrite the supplied synthesis into the Alibi voice. Do not add evidence not present in the synthesis.",
+        "Cite the user's own words or dates when the synthesis includes them.",
+        "Stay under 90 words. Do not mention entries. Do not invent unsaved work. Do not give productivity advice.",
       ].join("\n"),
       prompt: [
         `User asked: ${message}`,
-        `Pending draft, if any: ${JSON.stringify(draft ?? null)}`,
+        `Memory range: ${memory.range.label}`,
         "",
-        "Memory context:",
-        memory.evidenceText,
+        "Synthesis (use as the only evidence):",
+        JSON.stringify(synth ?? { summary: "", key_evidence: [], pattern_hint: null }),
       ].join("\n"),
     });
 
@@ -1331,11 +1395,24 @@ export async function processCompanionMessage(
     });
   }
 
+  // Run chat-insight extraction inline. Tempting to wrap in `after()` for
+  // latency, but the Supabase client captured here reads cookies on every
+  // request, and Next 16 closes the cookies handle once the response ships —
+  // any upsert that fires from `after()` fails silently and the chat mirror
+  // loses entries. The extraction is fast-model now, so the latency cost is
+  // small.
   await upsertCompanionMessageInsight(
     supabase,
     userMessage.message,
     conversation,
-  ).catch(() => undefined);
+    models,
+  ).catch((error) => {
+    console.error("failed to generate companion message insight", {
+      messageId: userMessage.message.id,
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
   const messagesAfterUser = await fetchCompanionMessagesForConversation(
     supabase,
@@ -1391,22 +1468,57 @@ export async function processCompanionMessage(
     user.id,
     conversation.id,
   );
-  const routed = await routeMessage(
-    models,
-    trimmed,
-    pendingDraft,
-    timezone,
-    recentMessages,
-  );
-  const clarificationDraft = pendingDraft
-    ? await completeDraftFromClarification(
+
+  // Skip-router heuristic: when a pending draft exists and the new message
+  // looks like a short clarification answer (no question mark, no
+  // analysis/conversation triggers), use the clarifier-only extractor and
+  // assume intent=clarify. Saves one fast-tier round-trip on common flows.
+  const shouldSkipRouter =
+    pendingDraft !== null &&
+    trimmed.length < 80 &&
+    !trimmed.includes("?") &&
+    !/\b(how long|what did|pattern|why|feel|felt|tell me|show me|cancel|nevermind|never mind|stop|forget|start timer|stop timer)\b/i.test(
+      trimmed,
+    );
+
+  let routed: RouterOutput;
+  let clarificationDraft: CompanionDraft | null = null;
+
+  if (shouldSkipRouter && pendingDraft) {
+    clarificationDraft = await completeDraftFromClarification(
+      models,
+      trimmed,
+      pendingDraft,
+      timezone,
+      recentMessages,
+    );
+    routed = normalizeRouterOutput(
+      { intent: "clarify", ...clarificationDraft },
+      trimmed,
+    );
+  } else {
+    routed = await routeMessage(
+      models,
+      trimmed,
+      pendingDraft,
+      timezone,
+      recentMessages,
+    );
+    // Belt-and-suspenders: when a pending draft is open and the user's reply
+    // didn't qualify for the skip-router fast path (long message or contains
+    // a question mark), still run the dedicated clarifier so we don't lose
+    // draft fields the router (gpt-4.1-nano class) may have missed inline.
+    if (pendingDraft) {
+      clarificationDraft = await completeDraftFromClarification(
         models,
         trimmed,
         pendingDraft,
         timezone,
         recentMessages,
-      )
-    : null;
+      );
+    }
+  }
+
   const mergedDraft = mergeDraft(
     pendingDraft,
     clarificationDraft ? mergeDraft(routed, clarificationDraft) : routed,

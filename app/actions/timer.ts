@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { generateNoteInsight } from "@/lib/ai-note-insights"
+import { invalidateMemoryContextForUser } from "@/lib/memory-context"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import { createClient } from "@/lib/supabase/server"
 import {
@@ -481,6 +482,11 @@ async function preserveNotesAndInsights(
     timeBlock.notes,
     source,
   )
+  // Run inline. Wrapping this in `after()` looked tempting for latency, but
+  // the Supabase client reads cookies on every request, and Next 16 closes
+  // the cookies handle after the response ships — the deferred upsert would
+  // throw silently and notes mirror entries would go missing. The extraction
+  // is fast-model now, so the latency cost is small.
   await storeNoteInsight(supabase, userId, timeBlock, noteVersionId)
 }
 
@@ -847,6 +853,7 @@ export async function resumeBlock(input: ResumeBlockInput): Promise<ResumeBlockR
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
+  invalidateMemoryContextForUser(user.id)
 
   return {
     type: "resumed",
@@ -1015,6 +1022,7 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
+  invalidateMemoryContextForUser(user.id)
 
   return {
     type: "stopped",
@@ -1152,6 +1160,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
+  invalidateMemoryContextForUser(user.id)
 
   return {
     type: "saved",
@@ -1199,6 +1208,7 @@ export async function deleteBlock(input: DeleteBlockInput): Promise<DeleteBlockR
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
   revalidatePath("/app/calendar")
+  invalidateMemoryContextForUser(user.id)
 
   return {
     type: "deleted",
