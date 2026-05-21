@@ -61,6 +61,16 @@ export function decryptSecret(value: string) {
   ]).toString("utf8");
 }
 
+export function isSecretDecryptionError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  return (
+    error.message.includes("Unsupported encrypted secret payload") ||
+    error.message.includes("unable to authenticate data") ||
+    error.message.includes("Unsupported state or unable to authenticate data")
+  );
+}
+
 export function previewSecret(value: string) {
   const trimmed = value.trim();
   if (trimmed.length <= 8) return "••••";

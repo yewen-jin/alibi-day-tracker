@@ -122,7 +122,12 @@ function createMemoryDb() {
   };
 }
 
-async function loadAiSettingsWithMemoryDb() {
+async function loadAiSettingsWithMemoryDb(
+  secretCrypto: {
+    decryptSecret?: (value: string) => string;
+    isSecretDecryptionError?: (error: unknown) => boolean;
+  } = {},
+) {
   const memory = createMemoryDb();
 
   vi.doMock("@/lib/db/client", () => ({
@@ -130,7 +135,11 @@ async function loadAiSettingsWithMemoryDb() {
   }));
   vi.doMock("@/lib/secret-crypto", () => ({
     encryptSecret: (value: string) => `encrypted:${value}`,
-    decryptSecret: (value: string) => value.replace("encrypted:", ""),
+    decryptSecret:
+      secretCrypto.decryptSecret ??
+      ((value: string) => value.replace("encrypted:", "")),
+    isSecretDecryptionError:
+      secretCrypto.isSecretDecryptionError ?? (() => false),
     previewSecret: (value: string) => `${value.slice(0, 4)}...${value.slice(-4)}`,
   }));
 
@@ -288,5 +297,33 @@ describe("ai profile settings", () => {
       type: "error",
       message: "select a custom API profile before changing models.",
     });
+  });
+
+  it("falls back to built-in models when an active custom key cannot decrypt", async () => {
+    const decryptError = new Error("Unsupported state or unable to authenticate data");
+    const {
+      resolveAiModelsForUser,
+      saveAiSettingsForUser,
+    } = await loadAiSettingsWithMemoryDb({
+      decryptSecret: () => {
+        throw decryptError;
+      },
+      isSecretDecryptionError: (error) => error === decryptError,
+    });
+
+    await saveAiSettingsForUser("user-1", {
+      provider: "openrouter",
+      apiKey: "sk-openrouter",
+      fastModel: "custom-fast",
+      companionModel: "custom-companion",
+      disclosureAccepted: true,
+    });
+
+    const models = await resolveAiModelsForUser("user-1");
+    expect(models.mode).toBe("hosted");
+
+    await expect(
+      resolveAiModelsForUser("user-1", { throwOnSecretError: true }),
+    ).rejects.toThrow("Unsupported state or unable to authenticate data");
   });
 });

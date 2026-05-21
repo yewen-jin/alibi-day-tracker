@@ -4,7 +4,12 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import { getDb } from "@/lib/db/client";
-import { decryptSecret, encryptSecret, previewSecret } from "@/lib/secret-crypto";
+import {
+  decryptSecret,
+  encryptSecret,
+  isSecretDecryptionError,
+  previewSecret,
+} from "@/lib/secret-crypto";
 import { companionModel, companionModelId, fastModel, fastModelId } from "@/lib/ai";
 import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai-providers";
 
@@ -597,7 +602,12 @@ export async function setActiveAiProviderForUser(
   };
 }
 
-export async function resolveAiModelsForUser(userId: string): Promise<ResolvedAiModels> {
+export async function resolveAiModelsForUser(
+  userId: string,
+  options: {
+    throwOnSecretError?: boolean;
+  } = {},
+): Promise<ResolvedAiModels> {
   const settings = await getAiSettingsForUser(userId);
 
   if (settings.mode !== "custom" || settings.disabledAt) {
@@ -611,7 +621,29 @@ export async function resolveAiModelsForUser(userId: string): Promise<ResolvedAi
     };
   }
 
-  const key = await getAiProviderSecret(userId, settings.provider);
+  let key: string | null = null;
+  try {
+    key = await getAiProviderSecret(userId, settings.provider);
+  } catch (error) {
+    if (options.throwOnSecretError || !isSecretDecryptionError(error)) {
+      throw error;
+    }
+
+    console.error("saved custom AI provider key could not be decrypted", {
+      userId,
+      provider: settings.provider,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      mode: "hosted",
+      provider: "openrouter",
+      fastModelId,
+      companionModelId,
+      fastModel,
+      companionModel,
+    };
+  }
   const providerConfig = AI_PROVIDERS[settings.provider];
   const baseURL = settings.baseUrl || providerConfig.defaultBaseUrl;
 
