@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, KeyRound, Loader2, RotateCcw, Server, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, RotateCcw, Server, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
   chooseAiProvider,
   deleteAiSettings,
@@ -12,12 +12,14 @@ import {
   updateAiModels,
 } from "@/app/actions/ai-settings";
 import type { AiProfileSnapshot, AiSettingsSnapshot } from "@/lib/ai-settings";
-import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai-providers";
-import { AI_PROVIDER_PRESETS, type AiProviderPreset } from "@/lib/ai-provider-presets";
+import { AI_PROVIDERS } from "@/lib/ai-providers";
+import { AI_PROVIDER_PRESETS, findPresetById, type AiProviderPreset } from "@/lib/ai-provider-presets";
 
 interface AiSettingsFormProps {
   initialSettings: AiSettingsSnapshot;
 }
+
+const DEFAULT_PRESET_ID = AI_PROVIDER_PRESETS[0]?.id ?? "openrouter-default";
 
 export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
   const router = useRouter();
@@ -25,8 +27,10 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     initialSettings.profiles.find((profile) => profile.active) ??
     initialSettings.profiles[0];
   const [selectedProfileId, setSelectedProfileId] = useState(activeProfile.id);
-  const [keyProvider, setKeyProvider] = useState<AiProviderId>(
-    activeProfile.type === "custom" ? activeProfile.provider : "openrouter",
+  const [presetId, setPresetId] = useState<string>(
+    activeProfile.type === "custom" && activeProfile.presetId
+      ? activeProfile.presetId
+      : DEFAULT_PRESET_ID,
   );
   const [baseUrl, setBaseUrl] = useState(activeProfile.type === "custom" ? activeProfile.baseUrl ?? "" : "");
   const [fastModel, setFastModel] = useState(activeProfile.fastModel);
@@ -40,9 +44,11 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
   const selectedProfile =
     initialSettings.profiles.find((profile) => profile.id === selectedProfileId) ??
     activeProfile;
-  const keyProviderConfig = AI_PROVIDERS[keyProvider];
-  const savedKeyForProvider = initialSettings.providerSettings.find(
-    (item) => item.provider === keyProvider,
+  const preset = useMemo(() => findPresetById(presetId), [presetId]);
+  const provider = preset?.provider ?? "openrouter";
+  const providerConfig = AI_PROVIDERS[provider];
+  const savedKeyForPreset = initialSettings.providerSettings.find(
+    (item) => item.presetId === presetId,
   );
   const isBuiltInSelected = selectedProfile.type === "hosted";
   const persistedError =
@@ -63,7 +69,8 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     setFastModel(profile.fastModel);
     setCompanionModel(profile.companionModel);
     if (profile.type === "custom") {
-      setKeyProvider(profile.provider);
+      const nextPresetId = profile.presetId ?? DEFAULT_PRESET_ID;
+      setPresetId(nextPresetId);
       setBaseUrl(profile.baseUrl ?? "");
       setAccepted(Boolean(profile.disclosureAcceptedAt));
     }
@@ -77,6 +84,7 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     startTransition(async () => {
       const result = await chooseAiProvider({
         profileId: profile.id,
+        presetId: profile.presetId,
         provider: profile.type === "custom" ? profile.provider : "hosted",
         baseUrl: profile.baseUrl,
       });
@@ -89,21 +97,18 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     });
   }
 
-  function handleKeyProviderChange(nextProvider: AiProviderId) {
-    setKeyProvider(nextProvider);
+  function handlePresetChange(nextPresetId: string) {
+    setPresetId(nextPresetId);
     const saved = initialSettings.providerSettings.find(
-      (item) => item.provider === nextProvider,
+      (item) => item.presetId === nextPresetId,
     );
-    setBaseUrl(saved?.baseUrl ?? "");
+    const next = findPresetById(nextPresetId);
+    setBaseUrl(saved?.baseUrl ?? next?.baseUrl ?? "");
+    setFastModel(saved?.fastModel ?? next?.fastModel ?? fastModel);
+    setCompanionModel(saved?.companionModel ?? next?.companionModel ?? companionModel);
     setAccepted(Boolean(saved?.disclosureAcceptedAt));
-  }
-
-  function handleApplyPreset(preset: AiProviderPreset) {
-    setKeyProvider(preset.provider);
-    setBaseUrl(preset.baseUrl ?? "");
-    setFastModel(preset.fastModel);
-    setCompanionModel(preset.companionModel);
-    setMessage(`preset filled: ${preset.label}. paste your key to save.`);
+    setApiKey("");
+    setMessage(null);
     setError(null);
   }
 
@@ -114,9 +119,12 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
 
     startTransition(async () => {
       const result = await saveAiSettings({
-        provider: keyProvider,
+        presetId,
+        provider,
         apiKey,
         baseUrl,
+        fastModel,
+        companionModel,
         disclosureAccepted: accepted,
       });
 
@@ -188,18 +196,18 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     });
   }
 
-  function handleDelete() {
+  function handleDeleteSavedKey(profile: AiProfileSnapshot) {
     setMessage(null);
     setError(null);
 
     startTransition(async () => {
-      const result = await deleteAiSettings();
+      const result = await deleteAiSettings({ presetId: profile.presetId });
       if (result.type === "error") {
         setError(result.message);
         return;
       }
       setApiKey("");
-      setMessage("custom API key deleted.");
+      setMessage(`${profile.label} key deleted.`);
       router.refresh();
     });
   }
@@ -222,34 +230,47 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
 
           <div className="mt-5 grid gap-3">
             {initialSettings.profiles.map((profile) => (
-              <button
+              <div
                 key={profile.id}
-                type="button"
-                onClick={() => handleChooseProfile(profile)}
-                disabled={isPending}
-                className={`alibi-block-item text-left ${
-                  profile.active ? "ring-2 ring-alibi-blue/20" : ""
-                }`}
+                className={`alibi-block-item ${profile.active ? "ring-2 ring-alibi-blue/20" : ""}`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-black text-alibi-blue">{profile.label}</p>
-                    <p className="mt-1 text-sm font-semibold text-alibi-teal">
-                      {profile.providerLabel}
-                      {profile.keyPreview ? ` · ${profile.keyPreview}` : " · environment key"}
-                    </p>
+                <button
+                  type="button"
+                  onClick={() => handleChooseProfile(profile)}
+                  disabled={isPending}
+                  className="w-full text-left"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-black text-alibi-blue">{profile.label}</p>
+                      <p className="mt-1 text-sm font-semibold text-alibi-teal">
+                        {profile.providerLabel}
+                        {profile.keyPreview ? ` · ${profile.keyPreview}` : " · environment key"}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-alibi-lavender/40 bg-white px-3 py-1 text-xs font-black text-alibi-teal">
+                      {profile.active ? "active" : profile.type}
+                    </span>
                   </div>
-                  <span className="rounded-full border border-alibi-lavender/40 bg-white px-3 py-1 text-xs font-black text-alibi-teal">
-                    {profile.active ? "active" : profile.type}
-                  </span>
-                </div>
-                <p className="mt-3 break-words text-xs font-semibold leading-5 text-alibi-teal">
-                  fast: {profile.fastModel}
-                </p>
-                <p className="break-words text-xs font-semibold leading-5 text-alibi-teal">
-                  companion: {profile.companionModel}
-                </p>
-              </button>
+                  <p className="mt-3 break-words text-xs font-semibold leading-5 text-alibi-teal">
+                    fast: {profile.fastModel}
+                  </p>
+                  <p className="break-words text-xs font-semibold leading-5 text-alibi-teal">
+                    companion: {profile.companionModel}
+                  </p>
+                </button>
+                {profile.type === "custom" && profile.presetId && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSavedKey(profile)}
+                    disabled={isPending}
+                    className="alibi-button-stop mt-3 inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-black"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    delete key
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </section>
@@ -291,10 +312,10 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-                  custom profile models
+                  active profile models
                 </p>
                 <h2 className="mt-1 text-xl font-black text-alibi-blue">
-                  {selectedProfile.providerLabel}
+                  {selectedProfile.label}
                 </h2>
               </div>
               <SlidersHorizontal className="h-5 w-5 text-alibi-pink" />
@@ -336,58 +357,9 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
               >
                 test
               </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isPending}
-                className="alibi-button-stop inline-flex h-10 items-center justify-center gap-2 px-4 text-sm font-black"
-              >
-                <Trash2 className="h-4 w-4" />
-                delete key
-              </button>
             </div>
           </form>
         )}
-
-        <section className="alibi-card p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-                quick start
-              </p>
-              <h2 className="mt-1 text-xl font-black text-alibi-blue">
-                provider presets
-              </h2>
-              <p className="mt-2 text-sm font-semibold leading-6 text-alibi-teal">
-                pick a preset to fill provider, base url, and recommended model ids. you still paste your own key below.
-              </p>
-            </div>
-            <Sparkles className="h-5 w-5 text-alibi-pink" />
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {AI_PROVIDER_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleApplyPreset(preset)}
-                disabled={isPending}
-                className="alibi-block-item text-left"
-              >
-                <p className="font-black text-alibi-blue">{preset.label}</p>
-                <p className="mt-1 text-xs font-semibold leading-5 text-alibi-teal">
-                  fast: {preset.fastModel}
-                </p>
-                <p className="text-xs font-semibold leading-5 text-alibi-teal">
-                  companion: {preset.companionModel}
-                </p>
-                <p className="mt-2 text-xs font-semibold leading-5 text-alibi-ink">
-                  {preset.notes}
-                </p>
-              </button>
-            ))}
-          </div>
-        </section>
 
         <form onSubmit={handleSaveProvider} className="alibi-card p-5">
           <div className="flex items-start justify-between gap-3">
@@ -396,34 +368,42 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
                 add or replace custom key
               </p>
               <h2 className="mt-1 text-xl font-black text-alibi-blue">
-                saved API profile
+                save provider key
               </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-alibi-teal">
+                pick a preset to prefill the base url and recommended model ids. each preset is its own slot, so deepseek, qwen, moonshot etc. can coexist.
+              </p>
             </div>
             <KeyRound className="h-5 w-5 text-alibi-pink" />
           </div>
 
           <div className="mt-5 grid gap-4">
             <label className="grid gap-1.5">
-              <span className="text-sm font-black text-alibi-blue">provider</span>
+              <span className="text-sm font-black text-alibi-blue">preset</span>
               <select
-                value={keyProvider}
-                onChange={(event) => handleKeyProviderChange(event.target.value as AiProviderId)}
+                value={presetId}
+                onChange={(event) => handlePresetChange(event.target.value)}
                 className="alibi-input h-11"
               >
-                {Object.entries(AI_PROVIDERS).map(([id, item]) => (
-                  <option key={id} value={id}>
+                {AI_PROVIDER_PRESETS.map((item: AiProviderPreset) => (
+                  <option key={item.id} value={item.id}>
                     {item.label}
                   </option>
                 ))}
               </select>
-              {savedKeyForProvider?.keyPreview && (
+              {preset && (
+                <span className="text-xs font-semibold leading-5 text-alibi-teal">
+                  {preset.notes}
+                </span>
+              )}
+              {savedKeyForPreset?.keyPreview && (
                 <span className="text-xs font-semibold text-alibi-teal">
-                  saved key: {savedKeyForProvider.keyPreview}
+                  saved key: {savedKeyForPreset.keyPreview} · saving replaces it.
                 </span>
               )}
             </label>
 
-            {keyProviderConfig.customBaseUrl && (
+            {providerConfig.customBaseUrl && (
               <label className="grid gap-1.5">
                 <span className="text-sm font-black text-alibi-blue">base url</span>
                 <input
@@ -435,6 +415,25 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
               </label>
             )}
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-sm font-black text-alibi-blue">fast model</span>
+                <input
+                  value={fastModel}
+                  onChange={(event) => setFastModel(event.target.value)}
+                  className="alibi-input h-11"
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-sm font-black text-alibi-blue">companion model</span>
+                <input
+                  value={companionModel}
+                  onChange={(event) => setCompanionModel(event.target.value)}
+                  className="alibi-input h-11"
+                />
+              </label>
+            </div>
+
             <label className="grid gap-1.5">
               <span className="text-sm font-black text-alibi-blue">api key</span>
               <input
@@ -442,7 +441,7 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
                 onChange={(event) => setApiKey(event.target.value)}
                 type="password"
                 autoComplete="off"
-                placeholder={savedKeyForProvider?.keyPreview ?? "paste a provider key"}
+                placeholder={savedKeyForPreset?.keyPreview ?? "paste a provider key"}
                 className="alibi-input h-11"
               />
             </label>

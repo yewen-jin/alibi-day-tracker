@@ -123,9 +123,12 @@ export async function getAiSettings(): Promise<AiSettingsSnapshot | null> {
 }
 
 export async function saveAiSettings(input: {
+  presetId?: string | null;
   provider: string;
   apiKey: string;
   baseUrl?: string | null;
+  fastModel?: string | null;
+  companionModel?: string | null;
   disclosureAccepted: boolean;
 }) {
   const user = await requireSyncedUser();
@@ -187,6 +190,7 @@ export async function resetAiModels() {
 
 export async function chooseAiProvider(input: {
   profileId?: string;
+  presetId?: string | null;
   provider?: string;
   baseUrl?: string | null;
 }) {
@@ -217,10 +221,10 @@ export async function disableAiSettings() {
   }
 }
 
-export async function deleteAiSettings() {
+export async function deleteAiSettings(input: { presetId?: string | null } = {}) {
   const user = await requireSyncedUser();
   try {
-    const result = await deleteAiSettingsForUser(user.id);
+    const result = await deleteAiSettingsForUser(user.id, input);
     revalidatePath("/app/settings");
     return result;
   } catch {

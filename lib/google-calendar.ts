@@ -103,6 +103,14 @@ function eventPayloadForBlock(block: TimeBlock) {
   };
 }
 
+function alibiCalendarPayload() {
+  return {
+    summary: "alibi",
+    description: "Time blocks created by Alibi.",
+    timeZone: "UTC",
+  };
+}
+
 async function saveRefreshToken(userId: string, token: string) {
   await getDb()
     .insertInto("user_secret_keys")
@@ -110,11 +118,12 @@ async function saveRefreshToken(userId: string, token: string) {
       user_id: userId,
       purpose: "google_refresh_token",
       provider: "google_calendar",
+      preset_id: "google_calendar",
       encrypted_value: encryptSecret(token),
       key_hint: null,
     })
     .onConflict((oc) =>
-      oc.columns(["user_id", "purpose", "provider"]).doUpdateSet({
+      oc.columns(["user_id", "purpose", "preset_id"]).doUpdateSet({
         encrypted_value: encryptSecret(token),
         updated_at: new Date().toISOString(),
       }),
@@ -178,9 +187,9 @@ async function googleFetch<T>(
   userId: string,
   path: string,
   init: RequestInit = {},
-): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
+): Promise<{ ok: true; data: T } | { ok: false; message: string; status: number }> {
   const token = await getAccessToken(userId);
-  if (!token) return { ok: false, message: "google calendar is not connected." };
+  if (!token) return { ok: false, message: "google calendar is not connected.", status: 0 };
 
   const response = await fetch(`${GOOGLE_CALENDAR_API}${path}`, {
     ...init,
@@ -193,7 +202,11 @@ async function googleFetch<T>(
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    return { ok: false, message: text.slice(0, 400) || `google calendar returned ${response.status}.` };
+    return {
+      ok: false,
+      message: text.slice(0, 400) || `google calendar returned ${response.status}.`,
+      status: response.status,
+    };
   }
 
   if (response.status === 204) {
@@ -201,6 +214,38 @@ async function googleFetch<T>(
   }
 
   return { ok: true, data: await response.json() as T };
+}
+
+async function createReplacementAlibiCalendar(userId: string) {
+  const result = await googleFetch<{ id?: string }>(
+    userId,
+    "/calendars",
+    { method: "POST", body: JSON.stringify(alibiCalendarPayload()) },
+  );
+
+  if (!result.ok) {
+    return result;
+  }
+
+  if (!result.data.id) {
+    return {
+      ok: false as const,
+      message: "google calendar did not return a calendar id.",
+      status: 0,
+    };
+  }
+
+  await getDb()
+    .updateTable("google_calendar_connections")
+    .set({
+      google_calendar_id: result.data.id,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .where("user_id", "=", userId)
+    .execute();
+
+  return { ok: true as const, calendarId: result.data.id };
 }
 
 export async function getGoogleCalendarConnection(userId: string): Promise<GoogleCalendarConnectionSnapshot> {
@@ -335,11 +380,7 @@ export async function completeGoogleCalendarConnection(code: string, state: stri
       "Content-Type": "application/json",
       Authorization: `Bearer ${token.access_token}`,
     },
-    body: JSON.stringify({
-      summary: "alibi",
-      description: "Time blocks created by Alibi.",
-      timeZone: "UTC",
-    }),
+    body: JSON.stringify(alibiCalendarPayload()),
   });
 
   if (!calendar.ok) {
@@ -380,7 +421,13 @@ export async function completeGoogleCalendarConnection(code: string, state: stri
   return { type: "connected" as const };
 }
 
-export async function syncTimeBlockToGoogleCalendar(userId: string, block: TimeBlock) {
+export async function syncTimeBlockToGoogleCalendar(
+  userId: string,
+  block: TimeBlock,
+  options: {
+    force?: boolean;
+  } = {},
+) {
   if (!block.ended_at) return { type: "skipped" as const };
 
   const connection = await getDb()
@@ -399,24 +446,53 @@ export async function syncTimeBlockToGoogleCalendar(userId: string, block: TimeB
     .where("time_block_id", "=", block.id)
     .executeTakeFirst();
 
-  if (existing?.sync_status === "synced" && existing.content_hash === contentHash) {
+  if (!options.force && existing?.sync_status === "synced" && existing.content_hash === contentHash) {
     return { type: "synced" as const };
   }
 
   const payload = eventPayloadForBlock(block);
-  const result = existing?.google_event_id
+  let calendarId = connection.google_calendar_id;
+  const patchedResult = existing?.google_event_id
     ? await googleFetch<{ id: string }>(
         userId,
-        `/calendars/${encodeURIComponent(connection.google_calendar_id)}/events/${encodeURIComponent(existing.google_event_id)}`,
+        `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.google_event_id)}`,
         { method: "PATCH", body: JSON.stringify(payload) },
       )
-    : await googleFetch<{ id: string }>(
+    : null;
+  let result = patchedResult;
+
+  if (!result || (!result.ok && result.status === 404)) {
+    result = await googleFetch<{ id: string }>(
+      userId,
+      `/calendars/${encodeURIComponent(calendarId)}/events`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  if (!result.ok && result.status === 404) {
+    const replacement = await createReplacementAlibiCalendar(userId);
+    if (replacement.ok) {
+      calendarId = replacement.calendarId;
+      result = await googleFetch<{ id: string }>(
         userId,
-        `/calendars/${encodeURIComponent(connection.google_calendar_id)}/events`,
+        `/calendars/${encodeURIComponent(calendarId)}/events`,
         { method: "POST", body: JSON.stringify(payload) },
       );
+    } else {
+      result = replacement;
+    }
+  }
 
   if (!result.ok) {
+    await getDb()
+      .updateTable("google_calendar_connections")
+      .set({
+        last_error: result.message,
+        updated_at: new Date().toISOString(),
+      })
+      .where("user_id", "=", userId)
+      .execute();
+
     await getDb()
       .insertInto("google_calendar_event_syncs")
       .values({

@@ -1,4 +1,4 @@
-import type { AiProviderId } from "@/lib/ai-providers"
+import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai-providers"
 
 export interface AiProviderPreset {
   id: string
@@ -11,6 +11,37 @@ export interface AiProviderPreset {
   fastModel: string
   companionModel: string
   notes: string
+}
+
+const LEGACY_PROVIDER_IDS = new Set<AiProviderId>([
+  "openrouter",
+  "openai",
+  "openai_compatible",
+  "anthropic",
+])
+
+function isLegacyProviderId(value: string): value is AiProviderId {
+  return LEGACY_PROVIDER_IDS.has(value as AiProviderId)
+}
+
+export function findPresetById(presetId: string): AiProviderPreset | null {
+  return AI_PROVIDER_PRESETS.find((preset) => preset.id === presetId) ?? null
+}
+
+export function presetLabelFor(presetId: string, fallbackProvider: AiProviderId): string {
+  const known = findPresetById(presetId)
+  if (known) return known.label
+  return `${AI_PROVIDERS[fallbackProvider].label} (custom)`
+}
+
+export function presetProviderFor(
+  presetId: string,
+  fallbackProvider: AiProviderId,
+): AiProviderId {
+  const known = findPresetById(presetId)
+  if (known) return known.provider
+  if (isLegacyProviderId(presetId)) return presetId
+  return fallbackProvider
 }
 
 export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
