@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, KeyRound, Loader2, RotateCcw, Server, SlidersHorizontal, Trash2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, RotateCcw, Server, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
 import {
   chooseAiProvider,
   deleteAiSettings,
@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/ai-settings";
 import type { AiProfileSnapshot, AiSettingsSnapshot } from "@/lib/ai-settings";
 import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai-providers";
+import { AI_PROVIDER_PRESETS, type AiProviderPreset } from "@/lib/ai-provider-presets";
 
 interface AiSettingsFormProps {
   initialSettings: AiSettingsSnapshot;
@@ -95,6 +96,15 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
     );
     setBaseUrl(saved?.baseUrl ?? "");
     setAccepted(Boolean(saved?.disclosureAcceptedAt));
+  }
+
+  function handleApplyPreset(preset: AiProviderPreset) {
+    setKeyProvider(preset.provider);
+    setBaseUrl(preset.baseUrl ?? "");
+    setFastModel(preset.fastModel);
+    setCompanionModel(preset.companionModel);
+    setMessage(`preset filled: ${preset.label}. paste your key to save.`);
+    setError(null);
   }
 
   function handleSaveProvider(event: FormEvent<HTMLFormElement>) {
@@ -338,6 +348,46 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
             </div>
           </form>
         )}
+
+        <section className="alibi-card p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
+                quick start
+              </p>
+              <h2 className="mt-1 text-xl font-black text-alibi-blue">
+                provider presets
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-alibi-teal">
+                pick a preset to fill provider, base url, and recommended model ids. you still paste your own key below.
+              </p>
+            </div>
+            <Sparkles className="h-5 w-5 text-alibi-pink" />
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {AI_PROVIDER_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handleApplyPreset(preset)}
+                disabled={isPending}
+                className="alibi-block-item text-left"
+              >
+                <p className="font-black text-alibi-blue">{preset.label}</p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-alibi-teal">
+                  fast: {preset.fastModel}
+                </p>
+                <p className="text-xs font-semibold leading-5 text-alibi-teal">
+                  companion: {preset.companionModel}
+                </p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-alibi-ink">
+                  {preset.notes}
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <form onSubmit={handleSaveProvider} className="alibi-card p-5">
           <div className="flex items-start justify-between gap-3">

@@ -289,6 +289,32 @@ async function queryRows<T>(query: PromiseLike<{ data: unknown; error: unknown }
   }
 }
 
+// In-process memory-context cache. The result is a pure function of
+// (userId, range, limits). We key on userId+range.label+limits to keep the
+// cache invariant simple. Entries expire after CACHE_TTL_MS; block writes
+// clear the user's entries via invalidateMemoryContextForUser.
+const MEMORY_CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000
+const memoryContextCache = new Map<
+  string,
+  { context: CompanionMemoryContext; expiresAt: number; userId: string }
+>()
+
+function memoryCacheKey(
+  userId: string,
+  rangeLabel: string,
+  limits: { blocks: number; noteInsights: number; linkedMessages: number; chatInsights: number },
+) {
+  return `${userId}::${rangeLabel}::${limits.blocks}-${limits.noteInsights}-${limits.linkedMessages}-${limits.chatInsights}`
+}
+
+export function invalidateMemoryContextForUser(userId: string) {
+  for (const [key, entry] of memoryContextCache) {
+    if (entry.userId === userId) {
+      memoryContextCache.delete(key)
+    }
+  }
+}
+
 export async function buildCompanionMemoryContext(
   input: BuildMemoryContextInput,
 ): Promise<CompanionMemoryContext> {
@@ -303,6 +329,27 @@ export async function buildCompanionMemoryContext(
   const recentMessages = (input.recentMessages ?? []).slice(
     -limits.recentMessages,
   )
+
+  // The "today" scope spans the user's local day and would go stale near
+  // midnight; skip cache for it. Other scopes (yesterday, recent_days,
+  // date_range) are stable for the TTL window.
+  const cacheable = range.scope !== "today"
+  const cacheKey = cacheable ? memoryCacheKey(input.userId, range.label, limits) : null
+
+  if (cacheKey) {
+    const cached = memoryContextCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      // recentMessages is per-call (not cacheable). Merge it into a fresh wrapper.
+      return {
+        ...cached.context,
+        recentMessages,
+        evidenceText: formatMemoryContext({
+          ...cached.context,
+          recentMessages,
+        }),
+      }
+    }
+  }
 
   const blocks = await queryRows<TimeBlock>(
     input.supabase
@@ -362,8 +409,18 @@ export async function buildCompanionMemoryContext(
     recentMessages,
   }
 
-  return {
+  const fullContext: CompanionMemoryContext = {
     ...context,
     evidenceText: formatMemoryContext(context),
   }
+
+  if (cacheKey) {
+    memoryContextCache.set(cacheKey, {
+      context: fullContext,
+      expiresAt: Date.now() + MEMORY_CONTEXT_CACHE_TTL_MS,
+      userId: input.userId,
+    })
+  }
+
+  return fullContext
 }

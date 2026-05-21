@@ -34,9 +34,9 @@ export default async function DashboardPage() {
     userMessages,
   ] = await Promise.all([
     listRecentCompletedTimeBlocks(user.id, since),
-    listRecentCompanionMessageInsights(user.id),
+    listRecentCompanionMessageInsights(user.id, { since }),
     listTimeBlockCategories(user.id),
-    listRecentUserCompanionMessages(user.id),
+    listRecentUserCompanionMessages(user.id, { since }),
   ])
   const blockIds = safeBlocks.map((block) => block.id)
   const safeInsights = await listTimeBlockInsightsForBlocks(user.id, blockIds)

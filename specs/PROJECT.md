@@ -86,6 +86,18 @@ Implemented V4 foundation:
 - Cartesia voice routes exist for short-lived token minting, batch STT, and TTS playback;
 - companion chat has push-to-talk recording and optional spoken assistant replies, with no raw audio storage by default.
 
+V4 update — agent layer refresh (2026-05):
+
+- hosted default `companionModelId` switched from `openai/gpt-5-mini` to `anthropic/claude-haiku-4.5` to match the alibi voice guide more closely without changing per-message cost shape;
+- chat-insight and note-insight extraction are demoted from the companion model to the fast model since they are non-user-visible JSON extractions;
+- chat-insight and note-insight upserts stay inline (a brief `after()` experiment was reverted because the Supabase server client reads cookies on every request and Next 16 closes the cookies handle after the response ships — deferred upserts threw silently and dropped mirror entries). The fast-tier model swap keeps the latency cost small;
+- `analyseBlocks` is split into a fast-tier evidence synthesis step and a companion-tier voice rewrite step, so the large memory packet never pays companion-tier price;
+- the router prompt now performs draft-completion inline when a `Prior draft` is provided, and a skip-router heuristic bypasses the router entirely on short clarification answers — replacing the previous sequential router + clarifier call pair;
+- `lib/memory-context.ts` now holds a 5-minute in-process cache keyed by user + range label + limits; cache is skipped for the `today` scope and is invalidated from `app/actions/timer.ts` on every block write or delete via `invalidateMemoryContextForUser`;
+- `anthropicCacheOptions` in `lib/ai.ts` wires Anthropic ephemeral prompt caching into the four companion call sites; only direct Anthropic profiles use it, since OpenRouter pass-through caching is inconsistent;
+- BYOK provider presets land at `lib/ai-provider-presets.ts` (DeepSeek, Qwen via DashScope, Zhipu GLM, Moonshot Kimi, plus OpenRouter Anthropic and DeepSeek convenience presets), surfaced as a quick-start picker in `components/ai-settings-form.tsx` that prefills the existing custom-key form;
+- `/app/docs` gains an "ai models, providers, and cost" section that documents the agent topology, defaults, deferred-insight behavior, two-tier analysis, prompt caching, and BYOK presets.
+
 ## Current Status
 
 Branch: `dev`

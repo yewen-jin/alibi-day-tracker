@@ -178,7 +178,7 @@ function resolveDemoModels(settings: DemoAiSettings | null | undefined) {
   )
   const companion = cleanModelId(
     settings?.companion_model,
-    process.env.OPENROUTER_DEMO_COMPANION_MODEL || (provider === "anthropic" ? "claude-sonnet-4-5" : companionModelId),
+    process.env.OPENROUTER_DEMO_COMPANION_MODEL || (provider === "anthropic" ? "claude-haiku-4-5" : companionModelId),
   )
 
   return {
