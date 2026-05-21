@@ -20,7 +20,8 @@ import {
   remainingDemoTokens,
   type DemoAiUsage,
 } from "@/lib/demo-token-budget"
-import { formatInsightForPrompt } from "@/lib/note-insights"
+import { deriveInsightFromNotes, formatInsightForPrompt } from "@/lib/note-insights"
+import { attachEvidenceSourceId, validateEvidenceClaims } from "@/lib/evidence-claims"
 import type { DemoAiSettings } from "@/lib/demo-storage"
 import type {
   CompanionMessageType,
@@ -70,6 +71,11 @@ const noteInsightSchema = z.object({
   projects: z.array(z.string()).default([]),
   themes: z.array(z.string()).default([]),
   evidence_excerpt: z.string().nullable().default(null),
+  evidence_claims: z.array(z.object({
+    source_field: z.string(),
+    kind: z.string(),
+    text: z.string(),
+  })).default([]),
 })
 
 type DemoModels = ReturnType<typeof resolveDemoModels>
@@ -721,7 +727,8 @@ export async function generateDemoBlockInsight(
         alibiCompanionGuide,
         "Return structured evidence only. Do not infer beyond the note.",
         "Use short lowercase phrases. Empty arrays are fine.",
-        "The evidence_excerpt must be a short excerpt or paraphrase from the note.",
+        "The evidence_excerpt must be a short excerpt from the note.",
+        "For evidence_claims, return only exact text copied from the note and the insight field it supports.",
       ].join("\n"),
       prompt: [
         `task: ${block.task_name ?? "unnamed block"}`,
@@ -732,6 +739,8 @@ export async function generateDemoBlockInsight(
         block.notes.slice(0, 3000),
       ].join("\n"),
     })
+    const fallbackClaims = deriveInsightFromNotes(block.notes)?.evidence_claims ?? []
+    const evidenceClaims = validateEvidenceClaims(block.notes, "time_block_note", output.evidence_claims)
     const insight: TimeBlockInsight = {
       id: `demo-insight-${block.id}`,
       time_block_id: block.id,
@@ -750,6 +759,10 @@ export async function generateDemoBlockInsight(
       projects: output.projects.map((item) => item.trim()).filter(Boolean).slice(0, 8),
       themes: output.themes.map((item) => item.trim()).filter(Boolean).slice(0, 8),
       evidence_excerpt: output.evidence_excerpt?.trim().slice(0, 220) || null,
+      evidence_claims: attachEvidenceSourceId(
+        evidenceClaims.length ? evidenceClaims : fallbackClaims,
+        block.id,
+      ),
       model_version: models.companionModelId,
       created_at: new Date().toISOString(),
     }

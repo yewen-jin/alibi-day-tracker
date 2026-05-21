@@ -11,6 +11,7 @@ import {
 } from "kysely";
 import { Pool, types as pgTypes } from "pg";
 import type { AppUserRole } from "@/lib/types";
+import type { EvidenceClaim } from "@/lib/types";
 
 type Timestamp = ColumnType<string, string | Date, string | Date>;
 type NullableTimestamp = ColumnType<string | null, string | Date | null, string | Date | null>;
@@ -127,6 +128,7 @@ interface TimeBlockInsightsTable {
   projects: Generated<string[]>;
   themes: Generated<string[]>;
   evidence_excerpt: string | null;
+  evidence_claims: ColumnType<EvidenceClaim[], EvidenceClaim[] | undefined, EvidenceClaim[]>;
   model_version: string;
   created_at: GeneratedTimestamp;
 }
@@ -180,6 +182,7 @@ interface CompanionMessageInsightsTable {
   mismatch_signals: Generated<string[]>;
   themes: Generated<string[]>;
   evidence_excerpt: string | null;
+  evidence_claims: ColumnType<EvidenceClaim[], EvidenceClaim[] | undefined, EvidenceClaim[]>;
   model_version: string;
   created_at: GeneratedTimestamp;
 }

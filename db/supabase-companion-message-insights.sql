@@ -20,10 +20,14 @@ create table if not exists public.companion_message_insights (
   mismatch_signals text[] not null default '{}',
   themes text[] not null default '{}',
   evidence_excerpt text,
+  evidence_claims jsonb not null default '[]'::jsonb,
   model_version text not null,
   created_at timestamptz not null default now(),
   unique (message_id)
 );
+
+alter table public.companion_message_insights
+  add column if not exists evidence_claims jsonb not null default '[]'::jsonb;
 
 create index if not exists companion_message_insights_user_created_at_idx
   on public.companion_message_insights (user_id, created_at desc);

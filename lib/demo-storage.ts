@@ -6,6 +6,7 @@ import {
 } from "@/lib/time-block-display"
 import type { CompanionDraft } from "@/lib/block-draft-utils"
 import { createDemoAiUsage, type DemoAiUsage } from "@/lib/demo-token-budget"
+import { attachEvidenceSourceId } from "@/lib/evidence-claims"
 import type {
   ActiveTimer,
   CompanionMessageType,
@@ -175,6 +176,7 @@ function insightForBlock(block: DemoStoredBlock): TimeBlockInsight | null {
     source_notes: block.notes?.trim() || null,
     created_at: block.updated_at,
     ...derived,
+    evidence_claims: attachEvidenceSourceId(derived.evidence_claims, block.id),
   }
 }
 
@@ -197,6 +199,7 @@ export function demoChatInsightForMessage(
     scope,
     created_at: message.created_at,
     ...derived,
+    evidence_claims: attachEvidenceSourceId(derived.evidence_claims, message.id),
   }
 }
 
@@ -270,7 +273,12 @@ function migrateSession(parsed: LegacyDemoSession): DemoStoredSession | null {
     block_threads: blockThreads,
     pending_draft: null,
     insights: blocks.map(insightForBlock).filter((insight): insight is TimeBlockInsight => Boolean(insight)),
-    chat_insights: Array.isArray(parsed.chat_insights) ? parsed.chat_insights : migratedChatInsights,
+    chat_insights: Array.isArray(parsed.chat_insights)
+      ? parsed.chat_insights.map((insight) => ({
+          ...insight,
+          evidence_claims: attachEvidenceSourceId(insight.evidence_claims ?? [], insight.message_id),
+        }))
+      : migratedChatInsights,
     ai_usage: {
       ...createDemoAiUsage(),
       ...(parsed.ai_usage ?? {}),

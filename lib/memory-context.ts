@@ -184,6 +184,17 @@ function compactList(values: string[] | null | undefined, limit = 4) {
   return (values ?? []).filter(Boolean).slice(0, limit).join(", ")
 }
 
+function compactClaimEvidence(
+  claims: { source_field: string; text: string }[] | null | undefined,
+  limit = 4,
+) {
+  return (claims ?? [])
+    .filter((claim) => claim.source_field && claim.text)
+    .slice(0, limit)
+    .map((claim) => `${claim.source_field}="${claim.text}"`)
+    .join(", ")
+}
+
 export function formatNoteInsightForMemory(insight: TimeBlockInsight) {
   const parts = [
     compactList(insight.actions)
@@ -209,6 +220,9 @@ export function formatNoteInsightForMemory(insight: TimeBlockInsight) {
       ? `projects=${compactList(insight.projects)}`
       : "",
     compactList(insight.themes) ? `themes=${compactList(insight.themes)}` : "",
+    compactClaimEvidence(insight.evidence_claims)
+      ? `claim_evidence=${compactClaimEvidence(insight.evidence_claims)}`
+      : "",
     insight.evidence_excerpt ? `evidence="${insight.evidence_excerpt}"` : "",
   ].filter(Boolean)
 
@@ -239,6 +253,9 @@ export function formatChatInsightForMemory(insight: CompanionMessageInsight) {
       ? `mismatch=${compactList(insight.mismatch_signals)}`
       : "",
     compactList(insight.themes) ? `themes=${compactList(insight.themes)}` : "",
+    compactClaimEvidence(insight.evidence_claims)
+      ? `claim_evidence=${compactClaimEvidence(insight.evidence_claims)}`
+      : "",
     insight.evidence_excerpt ? `evidence="${insight.evidence_excerpt}"` : "",
   ].filter(Boolean)
   const scope = insight.related_time_block_id

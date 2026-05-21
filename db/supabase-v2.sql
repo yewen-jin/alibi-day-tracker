@@ -116,6 +116,7 @@ create table if not exists public.time_block_insights (
   projects text[] not null default '{}',
   themes text[] not null default '{}',
   evidence_excerpt text,
+  evidence_claims jsonb not null default '[]'::jsonb,
   model_version text not null,
   created_at timestamptz not null default now(),
   unique (time_block_id)
@@ -123,7 +124,8 @@ create table if not exists public.time_block_insights (
 
 alter table public.time_block_insights
   add column if not exists note_version_id uuid references public.time_block_note_versions(id) on delete set null,
-  add column if not exists source_notes text;
+  add column if not exists source_notes text,
+  add column if not exists evidence_claims jsonb not null default '[]'::jsonb;
 
 create table if not exists public.active_timer (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -183,10 +185,14 @@ create table if not exists public.companion_message_insights (
   mismatch_signals text[] not null default '{}',
   themes text[] not null default '{}',
   evidence_excerpt text,
+  evidence_claims jsonb not null default '[]'::jsonb,
   model_version text not null,
   created_at timestamptz not null default now(),
   unique (message_id)
 );
+
+alter table public.companion_message_insights
+  add column if not exists evidence_claims jsonb not null default '[]'::jsonb;
 
 create index if not exists time_blocks_user_started_at_idx
   on public.time_blocks (user_id, started_at);

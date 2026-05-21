@@ -2,6 +2,7 @@ import { generateText, Output, type LanguageModel } from "ai"
 import { z } from "zod"
 import { fastModel, fastModelId } from "@/lib/ai"
 import { alibiCompanionGuide } from "@/lib/companion-voice"
+import { attachEvidenceSourceId, buildEvidenceClaims, validateEvidenceClaims } from "@/lib/evidence-claims"
 import type {
   CompanionConversation,
   CompanionMessage,
@@ -26,6 +27,11 @@ const chatInsightSchema = z.object({
   mismatch_signals: z.array(z.string()).default([]),
   themes: z.array(z.string()).default([]),
   evidence_excerpt: z.string().nullable().default(null),
+  evidence_claims: z.array(z.object({
+    source_field: z.string(),
+    kind: z.string(),
+    text: z.string(),
+  })).default([]),
 })
 
 type ChatInsightOutput = z.infer<typeof chatInsightSchema>
@@ -100,7 +106,7 @@ function excerpt(text: string) {
   return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned
 }
 
-function themesFor(insight: Omit<DerivedChatInsight, "themes" | "evidence_excerpt" | "model_version">) {
+function themesFor(insight: Omit<DerivedChatInsight, "themes" | "evidence_excerpt" | "evidence_claims" | "model_version">) {
   return Array.from(
     new Set([
       ...(insight.did_actions.length ? ["did"] : []),
@@ -127,11 +133,21 @@ export function deriveChatInsightFromMessage(text: string | null): DerivedChatIn
     useful_drift: collectMatches(cleaned, USEFUL_DRIFT_PATTERNS),
     mismatch_signals: collectMatches(cleaned, MISMATCH_PATTERNS),
   }
+  const evidence_claims = buildEvidenceClaims(cleaned, "companion_message", [
+    { source_field: "did_actions", kind: "action", patterns: DID_PATTERNS },
+    { source_field: "intended_actions", kind: "action", patterns: INTENT_PATTERNS },
+    { source_field: "avoided_or_deferred", kind: "avoidance", patterns: AVOIDED_PATTERNS },
+    { source_field: "friction_points", kind: "friction", patterns: FRICTION_PATTERNS },
+    { source_field: "emotional_signals", kind: "emotion", patterns: EMOTION_PATTERNS },
+    { source_field: "useful_drift", kind: "useful_drift", patterns: USEFUL_DRIFT_PATTERNS },
+    { source_field: "mismatch_signals", kind: "mismatch", patterns: MISMATCH_PATTERNS },
+  ])
 
   return {
     ...partial,
     themes: themesFor(partial),
     evidence_excerpt: excerpt(cleaned),
+    evidence_claims,
     model_version: CHAT_INSIGHT_MODEL_VERSION,
   }
 }
@@ -139,6 +155,7 @@ export function deriveChatInsightFromMessage(text: string | null): DerivedChatIn
 function normalizeInsightOutput(
   output: ChatInsightOutput,
   fallback: DerivedChatInsight,
+  messageText: string,
 ): DerivedChatInsight {
   const partial = {
     did_actions: limitArray(output.did_actions),
@@ -150,6 +167,11 @@ function normalizeInsightOutput(
     mismatch_signals: limitArray(output.mismatch_signals),
   }
   const outputThemes = limitArray(output.themes)
+  const evidence_claims = validateEvidenceClaims(
+    messageText,
+    "companion_message",
+    output.evidence_claims,
+  )
 
   return {
     ...partial,
@@ -157,6 +179,7 @@ function normalizeInsightOutput(
     evidence_excerpt:
       output.evidence_excerpt?.trim().slice(0, 220) ||
       fallback.evidence_excerpt,
+    evidence_claims: evidence_claims.length ? evidence_claims : fallback.evidence_claims,
     model_version: fastModelId,
   }
 }
@@ -184,13 +207,14 @@ export async function generateChatInsight(
         "Do not diagnose, score, judge, or infer failure from silence.",
         "Do not claim missing work unless the user explicitly stated an intention, comparison, or avoidance.",
         "Use short lowercase phrases. Empty arrays are fine.",
-        "The evidence_excerpt must be a short excerpt or paraphrase from the user's message.",
+        "The evidence_excerpt must be a short excerpt from the user's message.",
+        "For evidence_claims, return only exact text copied from the user's message and the insight field it supports.",
       ].join("\n"),
       prompt: ["User message:", messageText.slice(0, 3000)].join("\n"),
     })
 
     return {
-      ...normalizeInsightOutput(output, fallback),
+      ...normalizeInsightOutput(output, fallback, messageText),
       model_version: options.modelVersion ?? fastModelId,
     }
   } catch {
@@ -255,5 +279,6 @@ function buildCompanionMessageInsightRecord(
     scope: scopeForConversation(conversation),
     created_at: options.createdAt ?? new Date().toISOString(),
     ...insight,
+    evidence_claims: attachEvidenceSourceId(insight.evidence_claims, message.id),
   }
 }

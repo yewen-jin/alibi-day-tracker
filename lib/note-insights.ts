@@ -1,4 +1,5 @@
 import type { TimeBlock, TimeBlockInsight } from "@/lib/types"
+import { buildEvidenceClaims } from "@/lib/evidence-claims"
 
 type DerivedInsight = Omit<
   TimeBlockInsight,
@@ -116,6 +117,14 @@ export function deriveInsightFromNotes(notes: string | null): DerivedInsight | n
   const hyperfocusSignals = collectMatches(cleaned, HYPERFOCUS_PATTERNS)
   const satisfactionSignals = collectMatches(cleaned, SATISFACTION_PATTERNS)
   const uncertaintySignals = collectMatches(cleaned, UNCERTAINTY_PATTERNS)
+  const evidence_claims = buildEvidenceClaims(cleaned, "time_block_note", [
+    { source_field: "actions", kind: "action", patterns: ACTION_PATTERNS, limit: 8 },
+    { source_field: "friction_points", kind: "friction", patterns: FRICTION_PATTERNS },
+    { source_field: "avoidance_signals", kind: "avoidance", patterns: AVOIDANCE_PATTERNS },
+    { source_field: "hyperfocus_signals", kind: "hyperfocus", patterns: HYPERFOCUS_PATTERNS },
+    { source_field: "satisfaction_signals", kind: "satisfaction", patterns: SATISFACTION_PATTERNS },
+    { source_field: "uncertainty_signals", kind: "uncertainty", patterns: UNCERTAINTY_PATTERNS },
+  ])
   const themes = Array.from(
     new Set([
       ...frictionPoints.map(() => "friction"),
@@ -139,6 +148,7 @@ export function deriveInsightFromNotes(notes: string | null): DerivedInsight | n
     projects: collectNamed(cleaned, PROJECT_PATTERN),
     themes,
     evidence_excerpt: noteExcerpt(cleaned),
+    evidence_claims,
     model_version: INSIGHT_MODEL_VERSION,
   }
 }

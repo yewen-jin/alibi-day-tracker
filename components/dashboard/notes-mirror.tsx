@@ -1,92 +1,17 @@
-import { blockEvidenceLabel } from "@/lib/note-insights"
+import { buildNotesMirrorObservations } from "@/lib/dashboard-data"
 import type { TimeBlock, TimeBlockInsight } from "@/lib/types"
-
-interface MirrorObservation {
-  title: string
-  body: string
-  evidence: string
-}
-
-function excerpt(value: string | null) {
-  if (!value) return "no excerpt"
-  return value.length > 120 ? `${value.slice(0, 117)}...` : value
-}
-
-function buildObservations(blocks: TimeBlock[], insights: TimeBlockInsight[]) {
-  const byBlock = new Map(blocks.map((block) => [block.id, block]))
-  const observations: MirrorObservation[] = []
-  const friction = insights.filter(
-    (insight) => insight.friction_points.length > 0 || insight.avoidance_signals.length > 0,
-  )
-  const hyperfocus = insights.filter((insight) => insight.hyperfocus_signals.length > 0)
-  const satisfaction = insights.filter((insight) => insight.satisfaction_signals.length > 0)
-  const flatTone = insights.filter((insight) =>
-    ["flat", "anxious", "self-critical", "frustrated"].includes(insight.emotional_tone ?? ""),
-  )
-
-  const firstFriction = friction.find((insight) => byBlock.has(insight.time_block_id))
-  if (firstFriction) {
-    const block = byBlock.get(firstFriction.time_block_id)
-    observations.push({
-      title: "recurring friction",
-      body: `${friction.length} note${friction.length === 1 ? "" : "s"} mention friction, avoidance, or getting stuck.`,
-      evidence: `${block ? blockEvidenceLabel(block) : "saved block"}: ${excerpt(firstFriction.evidence_excerpt)}`,
-    })
-  }
-
-  const firstHyperfocus = hyperfocus.find((insight) => byBlock.has(insight.time_block_id))
-  if (firstHyperfocus) {
-    const block = byBlock.get(firstHyperfocus.time_block_id)
-    observations.push({
-      title: "deep focus signals",
-      body: `${hyperfocus.length} note${hyperfocus.length === 1 ? "" : "s"} mention hyperfocus, flow, or losing track of time.`,
-      evidence: `${block ? blockEvidenceLabel(block) : "saved block"}: ${excerpt(firstHyperfocus.evidence_excerpt)}`,
-    })
-  }
-
-  const firstSatisfaction = satisfaction.find((insight) => byBlock.has(insight.time_block_id))
-  if (firstSatisfaction) {
-    const block = byBlock.get(firstSatisfaction.time_block_id)
-    observations.push({
-      title: "satisfying threads",
-      body: `${satisfaction.length} note${satisfaction.length === 1 ? "" : "s"} carry relief, pride, or reward language.`,
-      evidence: `${block ? blockEvidenceLabel(block) : "saved block"}: ${excerpt(firstSatisfaction.evidence_excerpt)}`,
-    })
-  }
-
-  const firstFlat = flatTone.find((insight) => byBlock.has(insight.time_block_id))
-  if (firstFlat) {
-    const block = byBlock.get(firstFlat.time_block_id)
-    observations.push({
-      title: "emotional weather",
-      body: `${flatTone.length} note${flatTone.length === 1 ? "" : "s"} skew ${firstFlat.emotional_tone}.`,
-      evidence: `${block ? blockEvidenceLabel(block) : "saved block"}: ${excerpt(firstFlat.evidence_excerpt)}`,
-    })
-  }
-
-  if (observations.length === 0) {
-    const notedBlocks = blocks.filter((block) => block.notes?.trim())
-    const block = notedBlocks[0]
-    if (block) {
-      observations.push({
-        title: "notes are coming through",
-        body: `${notedBlocks.length} block${notedBlocks.length === 1 ? "" : "s"} have reflection notes ready for pattern-finding.`,
-        evidence: `${blockEvidenceLabel(block)}: ${excerpt(block.notes)}`,
-      })
-    }
-  }
-
-  return observations.slice(0, 3)
-}
+import { PatternSources } from "@/components/dashboard/pattern-sources"
 
 export function NotesMirror({
   blocks,
   insights,
+  noteVersionCreatedAtById,
 }: {
   blocks: TimeBlock[]
   insights: TimeBlockInsight[]
+  noteVersionCreatedAtById?: Map<string, string>
 }) {
-  const observations = buildObservations(blocks, insights)
+  const observations = buildNotesMirrorObservations(blocks, insights, noteVersionCreatedAtById)
 
   return (
     <section className="alibi-card p-5">
@@ -120,6 +45,7 @@ export function NotesMirror({
               <p className="mt-3 wrap-break-words border-t border-alibi-lavender/25 pt-3 text-xs font-semibold leading-5 text-alibi-teal">
                 {observation.evidence}
               </p>
+              <PatternSources sources={observation.sources} />
             </article>
           ))}
         </div>

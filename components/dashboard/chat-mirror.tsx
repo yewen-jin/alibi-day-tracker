@@ -1,14 +1,17 @@
 import { buildChatMirrorObservations } from "@/lib/dashboard-data"
-import type { CompanionMessageInsight, TimeBlock } from "@/lib/types"
+import type { CompanionMessage, CompanionMessageInsight, TimeBlock } from "@/lib/types"
+import { PatternSources } from "@/components/dashboard/pattern-sources"
 
 export function ChatMirror({
   blocks,
   insights,
+  messages = [],
 }: {
   blocks: TimeBlock[]
   insights: CompanionMessageInsight[]
+  messages?: CompanionMessage[]
 }) {
-  const observations = buildChatMirrorObservations(insights, blocks)
+  const observations = buildChatMirrorObservations(insights, blocks, messages)
 
   return (
     <section className="alibi-card p-5">
@@ -40,6 +43,7 @@ export function ChatMirror({
               <p className="mt-3 wrap-break-words border-t border-alibi-lavender/25 pt-3 text-xs font-semibold leading-5 text-alibi-teal">
                 {observation.evidence}
               </p>
+              <PatternSources sources={observation.sources} />
             </article>
           ))}
         </div>
