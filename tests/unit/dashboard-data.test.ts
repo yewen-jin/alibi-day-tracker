@@ -7,6 +7,7 @@ import {
   buildChatMirrorObservations,
   buildDailyTimelineItems,
   buildNotesMirrorObservations,
+  buildWorkPatternObservations,
   bucketByDay,
 } from "@/lib/dashboard-data"
 import type { CompanionMessage, CompanionMessageInsight, TimeBlock, TimeBlockInsight } from "@/lib/types"
@@ -497,5 +498,78 @@ describe("buildNotesMirrorObservations", () => {
 
     expect(result[0].sources[0].exact_text).toBe("blocked at the handoff")
     expect(result[0].sources[0].context_excerpt).toBe("blocked at the handoff")
+  })
+})
+
+describe("buildWorkPatternObservations", () => {
+  it("returns only patterns that have evidence", () => {
+    const result = buildWorkPatternObservations({
+      blocks: [makeBlock()],
+      noteInsights: [],
+      chatInsights: [],
+    })
+
+    expect(result).toHaveLength(0)
+  })
+
+  it("summarizes both note and chat signals into work patterns", () => {
+    const result = buildWorkPatternObservations({
+      blocks: [makeBlock({ id: "block-1", task_name: "admin" })],
+      noteInsights: [
+        makeNoteInsight({
+          time_block_id: "block-1",
+          friction_points: ["stuck"],
+          evidence_excerpt: "i got stuck on admin",
+        }),
+      ],
+      chatInsights: [
+        makeChatInsight({
+          friction_points: ["blocked"],
+          evidence_excerpt: "i felt blocked by the admin cleanup",
+        }),
+      ],
+    })
+    const friction = result.find((pattern) => pattern.key === "friction")
+
+    expect(friction).toMatchObject({
+      title: "friction and avoidance",
+      count: 2,
+    })
+    expect(friction?.sources).toHaveLength(2)
+    expect(friction?.sources.map((source) => source.type)).toEqual(["note", "chat"])
+  })
+
+  it("includes chat-only work patterns when there are no saved blocks", () => {
+    const result = buildWorkPatternObservations({
+      blocks: [],
+      noteInsights: [],
+      chatInsights: [
+        makeChatInsight({
+          intended_actions: ["proposal"],
+          evidence_excerpt: "i meant to work on the proposal",
+        }),
+      ],
+    })
+
+    expect(result.map((pattern) => pattern.key)).toContain("intention-gap")
+  })
+
+  it("includes saved block patterns without rendering zero-count defaults", () => {
+    const result = buildWorkPatternObservations({
+      blocks: [
+        makeBlock({
+          task_name: "hard launch cleanup",
+          effort_level: "grind",
+        }),
+      ],
+      noteInsights: [],
+      chatInsights: [],
+    })
+
+    expect(result.map((pattern) => pattern.key)).toEqual(["high-effort"])
+    expect(result[0].sources[0]).toMatchObject({
+      type: "note",
+      context_label: "5 May, hard launch cleanup",
+    })
   })
 })

@@ -72,6 +72,13 @@ export function DashboardOverview({
           </Link>
         </section>
         <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
+        <AdhdMarkers
+          blocks={blocks}
+          insights={insights}
+          chatInsights={chatInsights}
+          chatMessages={chatMessages}
+          noteVersionCreatedAtById={noteVersionCreatedAtById}
+        />
       </div>
     )
   }
@@ -85,7 +92,13 @@ export function DashboardOverview({
         noteVersionCreatedAtById={noteVersionCreatedAtById}
       />
       <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
-      <AdhdMarkers blocks={blocks} insights={insights} />
+      <AdhdMarkers
+        blocks={blocks}
+        insights={insights}
+        chatInsights={chatInsights}
+        chatMessages={chatMessages}
+        noteVersionCreatedAtById={noteVersionCreatedAtById}
+      />
     </div>
   )
 }
