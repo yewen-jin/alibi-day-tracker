@@ -12,10 +12,16 @@ import {
 } from "@/lib/secret-crypto";
 import { companionModel, companionModelId, fastModel, fastModelId } from "@/lib/ai";
 import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai-providers";
+import {
+  findPresetById,
+  presetLabelFor,
+  presetProviderFor,
+} from "@/lib/ai-provider-presets";
 
 export interface AiSettingsSnapshot {
   mode: "hosted" | "custom";
   activeProfileId: string;
+  presetId: string | null;
   provider: AiProviderId;
   baseUrl: string | null;
   fastModel: string;
@@ -33,6 +39,7 @@ export interface AiProfileSnapshot {
   id: string;
   type: "hosted" | "custom";
   label: string;
+  presetId: string | null;
   provider: AiProviderId;
   providerLabel: string;
   baseUrl: string | null;
@@ -48,6 +55,8 @@ export interface AiProfileSnapshot {
 }
 
 export interface AiProviderSettingsSnapshot {
+  presetId: string;
+  presetLabel: string;
   provider: AiProviderId;
   baseUrl: string | null;
   fastModel: string;
@@ -86,6 +95,7 @@ function hostedProfile(active: boolean, lastError: string | null = null): AiProf
     id: "hosted",
     type: "hosted",
     label: "Built-in default API",
+    presetId: null,
     provider: "openrouter",
     providerLabel: "OpenRouter",
     baseUrl: AI_PROVIDERS.openrouter.defaultBaseUrl,
@@ -106,9 +116,10 @@ function customProfile(
   active: boolean,
 ): AiProfileSnapshot {
   return {
-    id: `custom:${settings.provider}`,
+    id: `custom:${settings.presetId}`,
     type: "custom",
-    label: `${AI_PROVIDERS[settings.provider].label} custom API`,
+    label: settings.presetLabel,
+    presetId: settings.presetId,
     provider: settings.provider,
     providerLabel: AI_PROVIDERS[settings.provider].label,
     baseUrl: settings.baseUrl,
@@ -129,6 +140,7 @@ function defaultAiSettings(lastError: string | null = null): AiSettingsSnapshot 
   return {
     mode: "hosted",
     activeProfileId: profile.id,
+    presetId: null,
     provider: "openrouter",
     baseUrl: profile.baseUrl,
     fastModel: profile.fastModel,
@@ -141,6 +153,28 @@ function defaultAiSettings(lastError: string | null = null): AiSettingsSnapshot 
     profiles: [profile],
     providerSettings: [],
   };
+}
+
+function resolvePresetSpec(input: {
+  presetId?: string | null;
+  provider: string;
+  baseUrl?: string | null;
+  fastModel?: string | null;
+  companionModel?: string | null;
+}) {
+  const presetId = (input.presetId ?? "").trim() || input.provider;
+  const known = findPresetById(presetId);
+  const provider = known
+    ? known.provider
+    : presetProviderFor(presetId, normalizeProvider(input.provider));
+  const baseUrl =
+    input.baseUrl?.trim() ||
+    known?.baseUrl ||
+    AI_PROVIDERS[provider].defaultBaseUrl;
+  const fastModel = input.fastModel?.trim() || known?.fastModel || fastModelId;
+  const companionModel =
+    input.companionModel?.trim() || known?.companionModel || companionModelId;
+  return { presetId, provider, baseUrl, fastModel, companionModel };
 }
 
 function isMissingRelationError(error: unknown) {
@@ -187,6 +221,7 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
     | {
         mode: string;
         provider: string;
+        preset_id: string | null;
         base_url: string | null;
         fast_model: string;
         companion_model: string;
@@ -200,6 +235,7 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
 
   let providerRows: Array<{
     provider: string;
+    preset_id: string;
     base_url: string | null;
     fast_model: string;
     companion_model: string;
@@ -232,17 +268,23 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
     throw error;
   }
 
-  const providerSettings = providerRows.map((item) => ({
-    provider: normalizeProvider(item.provider),
-    baseUrl: item.base_url,
-    fastModel: item.fast_model,
-    companionModel: item.companion_model,
-    keyPreview: item.key_preview,
-    disclosureAcceptedAt: item.disclosure_accepted_at,
-    disabledAt: item.disabled_at,
-    testedAt: item.tested_at,
-    lastError: item.last_error,
-  }));
+  const providerSettings: AiProviderSettingsSnapshot[] = providerRows.map((item) => {
+    const provider = normalizeProvider(item.provider);
+    const presetId = item.preset_id || item.provider;
+    return {
+      presetId,
+      presetLabel: presetLabelFor(presetId, provider),
+      provider,
+      baseUrl: item.base_url,
+      fastModel: item.fast_model,
+      companionModel: item.companion_model,
+      keyPreview: item.key_preview,
+      disclosureAcceptedAt: item.disclosure_accepted_at,
+      disabledAt: item.disabled_at,
+      testedAt: item.tested_at,
+      lastError: item.last_error,
+    };
+  });
 
   if (!row) {
     const profiles = [
@@ -258,9 +300,10 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
   }
 
   const activeProvider = normalizeProvider(row.provider);
+  const activePresetId = row.preset_id || row.provider;
   const requestedMode = normalizeMode(row.mode);
   const activeProviderSettings = providerSettings.find(
-    (item) => item.provider === activeProvider,
+    (item) => item.presetId === activePresetId,
   );
   const activeProfile =
     requestedMode === "custom" && activeProviderSettings?.keyPreview
@@ -269,13 +312,17 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
   const profiles = [
     hostedProfile(activeProfile.type === "hosted"),
     ...providerSettings.map((item) =>
-      customProfile(item, activeProfile.type === "custom" && item.provider === activeProvider),
+      customProfile(
+        item,
+        activeProfile.type === "custom" && item.presetId === activePresetId,
+      ),
     ),
   ];
 
   return {
     mode: activeProfile.type,
     activeProfileId: activeProfile.id,
+    presetId: activeProfile.presetId,
     provider: activeProfile.provider,
     baseUrl: activeProfile.baseUrl ?? row.base_url,
     fastModel: activeProfile.fastModel,
@@ -291,13 +338,13 @@ export async function getAiSettingsForUser(userId: string): Promise<AiSettingsSn
   };
 }
 
-async function getAiProviderSecret(userId: string, provider: AiProviderId) {
+async function getAiProviderSecret(userId: string, presetId: string) {
   const row = await getDb()
     .selectFrom("user_secret_keys")
     .select(["encrypted_value"])
     .where("user_id", "=", userId)
     .where("purpose", "=", "ai_provider_key")
-    .where("provider", "=", provider)
+    .where("preset_id", "=", presetId)
     .executeTakeFirst();
 
   return row ? decryptSecret(row.encrypted_value) : null;
@@ -306,6 +353,7 @@ async function getAiProviderSecret(userId: string, provider: AiProviderId) {
 export async function saveAiSettingsForUser(
   userId: string,
   input: {
+    presetId?: string | null;
     provider: string;
     apiKey: string;
     baseUrl?: string | null;
@@ -318,18 +366,20 @@ export async function saveAiSettingsForUser(
     return { type: "error" as const, message: "confirm the provider data disclosure before saving." };
   }
 
+  const spec = resolvePresetSpec(input);
   const existing = await getAiSettingsForUser(userId);
-  const existingForProvider = existing.providerSettings.find(
-    (item) => item.provider === normalizeProvider(input.provider),
+  const existingForPreset = existing.providerSettings.find(
+    (item) => item.presetId === spec.presetId,
   );
   const validated = validateAiProviderConfig({
-    provider: input.provider,
-    baseUrl: input.baseUrl,
-    fastModel: input.fastModel ?? existingForProvider?.fastModel ?? fastModelId,
+    provider: spec.provider,
+    baseUrl: spec.baseUrl,
+    fastModel:
+      input.fastModel ?? existingForPreset?.fastModel ?? spec.fastModel,
     companionModel:
       input.companionModel ??
-      existingForProvider?.companionModel ??
-      companionModelId,
+      existingForPreset?.companionModel ??
+      spec.companionModel,
   });
   if (validated.type === "error") return validated;
 
@@ -338,17 +388,21 @@ export async function saveAiSettingsForUser(
     return { type: "error" as const, message: "api key is required." };
   }
 
+  const presetId = spec.presetId;
+
   await getDb()
     .insertInto("user_secret_keys")
     .values({
       user_id: userId,
       purpose: "ai_provider_key",
       provider: validated.provider,
+      preset_id: presetId,
       encrypted_value: encryptSecret(apiKey),
       key_hint: previewSecret(apiKey),
     })
     .onConflict((oc) =>
-      oc.columns(["user_id", "purpose", "provider"]).doUpdateSet({
+      oc.columns(["user_id", "purpose", "preset_id"]).doUpdateSet({
+        provider: validated.provider,
         encrypted_value: encryptSecret(apiKey),
         key_hint: previewSecret(apiKey),
         updated_at: new Date().toISOString(),
@@ -361,6 +415,7 @@ export async function saveAiSettingsForUser(
     .values({
       user_id: userId,
       provider: validated.provider,
+      preset_id: presetId,
       base_url: validated.baseUrl,
       fast_model: validated.fastModel,
       companion_model: validated.companionModel,
@@ -370,7 +425,8 @@ export async function saveAiSettingsForUser(
       last_error: null,
     })
     .onConflict((oc) =>
-      oc.columns(["user_id", "provider"]).doUpdateSet({
+      oc.columns(["user_id", "preset_id"]).doUpdateSet({
+        provider: validated.provider,
         base_url: validated.baseUrl,
         fast_model: validated.fastModel,
         companion_model: validated.companionModel,
@@ -389,6 +445,7 @@ export async function saveAiSettingsForUser(
       user_id: userId,
       mode: "custom",
       provider: validated.provider,
+      preset_id: presetId,
       base_url: validated.baseUrl,
       fast_model: validated.fastModel,
       companion_model: validated.companionModel,
@@ -401,6 +458,7 @@ export async function saveAiSettingsForUser(
       oc.column("user_id").doUpdateSet({
         mode: "custom",
         provider: validated.provider,
+        preset_id: presetId,
         base_url: validated.baseUrl,
         fast_model: validated.fastModel,
         companion_model: validated.companionModel,
@@ -413,7 +471,7 @@ export async function saveAiSettingsForUser(
     )
     .execute();
 
-  return { type: "saved" as const };
+  return { type: "saved" as const, presetId };
 }
 
 export async function updateAiModelsForUser(
@@ -425,7 +483,7 @@ export async function updateAiModelsForUser(
 ) {
   const settings = await getAiSettingsForUser(userId);
 
-  if (settings.mode !== "custom" || !settings.keyPreview) {
+  if (settings.mode !== "custom" || !settings.keyPreview || !settings.presetId) {
     return { type: "error" as const, message: "select a custom API profile before changing models." };
   }
 
@@ -447,7 +505,7 @@ export async function updateAiModelsForUser(
       updated_at: new Date().toISOString(),
     })
     .where("user_id", "=", userId)
-    .where("provider", "=", settings.provider)
+    .where("preset_id", "=", settings.presetId)
     .execute();
 
   await getDb()
@@ -472,6 +530,7 @@ export async function resetAiSettingsToDefaultForUser(userId: string) {
       user_id: userId,
       mode: "hosted",
       provider: "openrouter",
+      preset_id: null,
       base_url: AI_PROVIDERS.openrouter.defaultBaseUrl,
       fast_model: fastModelId,
       companion_model: companionModelId,
@@ -485,6 +544,7 @@ export async function resetAiSettingsToDefaultForUser(userId: string) {
       oc.column("user_id").doUpdateSet({
         mode: "hosted",
         provider: "openrouter",
+        preset_id: null,
         base_url: AI_PROVIDERS.openrouter.defaultBaseUrl,
         fast_model: fastModelId,
         companion_model: companionModelId,
@@ -513,10 +573,14 @@ export async function disableAiSettingsForUser(userId: string) {
   await resetAiSettingsToDefaultForUser(userId);
 }
 
-export async function deleteAiSettingsForUser(userId: string) {
+export async function deleteAiSettingsForUser(
+  userId: string,
+  input: { presetId?: string | null } = {},
+) {
   const settings = await getAiSettingsForUser(userId);
+  const targetPresetId = input.presetId ?? settings.presetId;
 
-  if (settings.mode !== "custom") {
+  if (!targetPresetId) {
     return { type: "error" as const, message: "select a custom API profile before deleting a key." };
   }
 
@@ -524,24 +588,27 @@ export async function deleteAiSettingsForUser(userId: string) {
     .deleteFrom("user_secret_keys")
     .where("user_id", "=", userId)
     .where("purpose", "=", "ai_provider_key")
-    .where("provider", "=", settings.provider)
+    .where("preset_id", "=", targetPresetId)
     .execute();
 
   await getDb()
     .deleteFrom("user_ai_provider_settings")
     .where("user_id", "=", userId)
-    .where("provider", "=", settings.provider)
+    .where("preset_id", "=", targetPresetId)
     .execute();
 
-  await resetAiSettingsToDefaultForUser(userId);
+  if (settings.presetId === targetPresetId) {
+    await resetAiSettingsToDefaultForUser(userId);
+  }
 
-  return { type: "deleted" as const };
+  return { type: "deleted" as const, presetId: targetPresetId };
 }
 
 export async function setActiveAiProviderForUser(
   userId: string,
   input: {
     profileId?: string;
+    presetId?: string | null;
     provider?: string;
     baseUrl?: string | null;
   },
@@ -554,10 +621,18 @@ export async function setActiveAiProviderForUser(
     };
   }
 
-  const provider = normalizeProvider(input.provider ?? input.profileId?.replace("custom:", ""));
+  const presetId =
+    input.presetId?.trim() ||
+    input.profileId?.replace(/^custom:/, "") ||
+    input.provider ||
+    "";
+  if (!presetId) {
+    return { type: "error" as const, message: "missing preset id." };
+  }
+
   const settings = await getAiSettingsForUser(userId);
   const providerSettings = settings.providerSettings.find(
-    (item) => item.provider === provider,
+    (item) => item.presetId === presetId,
   );
 
   if (!providerSettings?.keyPreview) {
@@ -569,7 +644,8 @@ export async function setActiveAiProviderForUser(
     .values({
       user_id: userId,
       mode: "custom",
-      provider,
+      provider: providerSettings.provider,
+      preset_id: presetId,
       base_url: providerSettings.baseUrl ?? input.baseUrl ?? null,
       fast_model: providerSettings.fastModel,
       companion_model: providerSettings.companionModel,
@@ -582,7 +658,8 @@ export async function setActiveAiProviderForUser(
     .onConflict((oc) =>
       oc.column("user_id").doUpdateSet({
         mode: "custom",
-        provider,
+        provider: providerSettings.provider,
+        preset_id: presetId,
         base_url: providerSettings.baseUrl ?? input.baseUrl ?? null,
         fast_model: providerSettings.fastModel,
         companion_model: providerSettings.companionModel,
@@ -621,9 +698,20 @@ export async function resolveAiModelsForUser(
     };
   }
 
+  if (!settings.presetId) {
+    return {
+      mode: "hosted",
+      provider: "openrouter",
+      fastModelId,
+      companionModelId,
+      fastModel,
+      companionModel,
+    };
+  }
+
   let key: string | null = null;
   try {
-    key = await getAiProviderSecret(userId, settings.provider);
+    key = await getAiProviderSecret(userId, settings.presetId);
   } catch (error) {
     if (options.throwOnSecretError || !isSecretDecryptionError(error)) {
       throw error;
@@ -693,7 +781,7 @@ export async function markAiSettingsTested(
 ) {
   const settings = await getAiSettingsForUser(userId);
 
-  if (settings.mode === "custom") {
+  if (settings.mode === "custom" && settings.presetId) {
     await getDb()
       .updateTable("user_ai_provider_settings")
       .set({
@@ -702,7 +790,7 @@ export async function markAiSettingsTested(
         updated_at: new Date().toISOString(),
       })
       .where("user_id", "=", userId)
-      .where("provider", "=", settings.provider)
+      .where("preset_id", "=", settings.presetId)
       .execute();
   }
 

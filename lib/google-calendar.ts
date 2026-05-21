@@ -110,11 +110,12 @@ async function saveRefreshToken(userId: string, token: string) {
       user_id: userId,
       purpose: "google_refresh_token",
       provider: "google_calendar",
+      preset_id: "google_calendar",
       encrypted_value: encryptSecret(token),
       key_hint: null,
     })
     .onConflict((oc) =>
-      oc.columns(["user_id", "purpose", "provider"]).doUpdateSet({
+      oc.columns(["user_id", "purpose", "preset_id"]).doUpdateSet({
         encrypted_value: encryptSecret(token),
         updated_at: new Date().toISOString(),
       }),

@@ -189,6 +189,7 @@ interface UserSecretKeysTable {
   user_id: string;
   purpose: string;
   provider: string;
+  preset_id: string;
   encrypted_value: string;
   key_hint: string | null;
   created_at: GeneratedTimestamp;
@@ -199,6 +200,7 @@ interface UserAiSettingsTable {
   user_id: string;
   mode: Generated<string>;
   provider: Generated<string>;
+  preset_id: string | null;
   base_url: string | null;
   fast_model: Generated<string>;
   companion_model: Generated<string>;
@@ -214,6 +216,7 @@ interface UserAiSettingsTable {
 interface UserAiProviderSettingsTable {
   user_id: string;
   provider: string;
+  preset_id: string;
   base_url: string | null;
   fast_model: Generated<string>;
   companion_model: Generated<string>;
