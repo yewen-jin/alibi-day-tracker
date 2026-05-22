@@ -24,7 +24,7 @@ The AI chooses how to arrange and fill those parts, but it must not invent arbit
 ## Key Files
 
 - `app/actions/dashboard-views.ts`
-  - Server actions for creating, refreshing, publishing, and archiving custom views.
+  - Server actions for creating, updating, refreshing, publishing, and archiving custom views.
   - Loads user data, builds the evidence packet, calls the dashboard agent, saves runs/logs.
 - `lib/dashboard-view-agent.ts`
   - Dashboard agent prompt.
@@ -58,7 +58,7 @@ Creation must produce:
 }
 ```
 
-Refresh must produce:
+Update must produce the same shape as creation. Refresh must produce:
 
 ```ts
 {
@@ -71,6 +71,7 @@ Rules:
 - `spec.sections` describes UI structure only.
 - `result.sections` contains generated content only.
 - Section ids and types must match exactly between spec and result.
+- Update may revise the saved spec and result to change rendering, section order, section types, titles, descriptions, metrics, and sources.
 - Refresh must preserve the saved spec and regenerate only matching result sections.
 - Metric card `value` fields are strings because they are display text.
 - Chart point `value` fields are numbers.
@@ -105,13 +106,15 @@ Every qualitative claim in observations, pattern cards, and source panels should
 
 Refresh is the same pattern, except it passes the saved spec and validates that only matching `result.sections` are regenerated.
 
+Update is different from refresh: it passes the saved spec, latest result, fresh evidence, and the user's update request, then replaces the saved spec and writes a new run. Use update when the user wants to change rendering or layout; use refresh when the user wants the same saved dashboard recomputed from newer evidence.
+
 ## Logging
 
 `dashboard_view_runs` stores the current run status/result for a view.
 
 `dashboard_view_generation_logs` stores audit data for create and refresh attempts:
 
-- `action`: `create` or `refresh`
+- `action`: `create`, `refresh`, or `update`
 - `status`: `success` or `error`
 - `source_prompt`
 - `model_version`
@@ -160,6 +163,7 @@ Interpretation:
 - Keep validation strict at the rendering boundary.
 - A fallback may extract JSON from raw model text, but the extracted object must still pass the exact same schemas.
 - Avoid adding broad local normalization; it can turn invalid model output into misleading analysis.
+- For saved-dashboard edits, prefer the update path over mutating renderer output by hand. The renderer should stay a fixed safe palette; the saved spec/result should change.
 - When improving reliability, prefer clearer schema/prompt constraints, better logging, smaller packet shape, or provider/model-specific structured-output settings.
 
 ## Verification

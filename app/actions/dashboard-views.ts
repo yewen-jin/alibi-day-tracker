@@ -10,11 +10,13 @@ import {
   type DashboardGenerationAttemptLog,
   generateDashboardCreateSnapshot,
   generateDashboardRefreshSnapshot,
+  generateDashboardUpdateSnapshot,
 } from "@/lib/dashboard-view-agent"
 import {
   buildDashboardEvidencePacket,
   type DashboardViewResult,
   slugifyDashboardViewTitle,
+  validateDashboardViewResult,
   validateDashboardViewSpec,
 } from "@/lib/dashboard-view-spec"
 import {
@@ -23,8 +25,11 @@ import {
   createDashboardViewGenerationLog,
   createDashboardViewRun,
   getDashboardViewById,
+  getLatestDashboardViewRun,
   hasDashboardViewsSchema,
   publishDashboardView,
+  renameDashboardView,
+  updateDashboardView,
 } from "@/lib/repositories/dashboard-views"
 
 async function requireUser() {
@@ -179,6 +184,128 @@ export async function refreshDashboardViewAction(viewId: string) {
       error: message,
     })
   }
+
+  revalidatePath("/app/dashboard")
+  redirect(`/app/dashboard?view=${view.slug}`)
+}
+
+export async function renameDashboardViewAction(viewId: string, formData: FormData) {
+  const user = await requireUser()
+  const view = await getDashboardViewById(user.id, viewId)
+  if (!view || view.status === "archived") redirect("/app/dashboard")
+
+  const title = String(formData.get("title") ?? "").trim()
+  const description = String(formData.get("description") ?? "").trim()
+
+  if (title.length < 1 || title.length > 80 || description.length > 220) {
+    redirect(`/app/dashboard?view=${view.slug}`)
+  }
+
+  const updated = await renameDashboardView({
+    userId: user.id,
+    id: view.id,
+    title,
+    description,
+  })
+
+  revalidatePath("/app/dashboard")
+  redirect(updated ? `/app/dashboard?view=${updated.slug}` : `/app/dashboard?view=${view.slug}`)
+}
+
+export async function updateDashboardViewAction(viewId: string, formData: FormData) {
+  const user = await requireUser()
+  const view = await getDashboardViewById(user.id, viewId)
+  if (!view || view.status === "archived") redirect("/app/dashboard")
+
+  const updateRequest = String(formData.get("update") ?? "").trim()
+  if (updateRequest.length < 8 || updateRequest.length > 1000) {
+    redirect(`/app/dashboard?view=${view.slug}`)
+  }
+
+  const input = await loadDashboardSkillInput(user.id)
+  const packet = buildDashboardEvidencePacket(input)
+  const models = await resolveAiModelsForUser(user.id)
+  const attempts: DashboardGenerationAttemptLog[] = []
+  const savedSpec = validateDashboardViewSpec(view.spec)
+  const latestRun = await getLatestDashboardViewRun(user.id, view.id)
+  let latestResult: DashboardViewResult | null = null
+  if (latestRun?.result) {
+    try {
+      latestResult = validateDashboardViewResult(latestRun.result, { spec: savedSpec })
+    } catch {
+      latestResult = null
+    }
+  }
+  let status: "success" | "error" = "error"
+  let error: string | null = null
+
+  try {
+    const generated = await generateDashboardUpdateSnapshot(
+      view.source_prompt,
+      updateRequest,
+      savedSpec,
+      latestResult,
+      packet,
+      models,
+      {
+        onAttempt: (attempt) => attempts.push(attempt),
+      },
+    )
+    const sourcePrompt = [
+      view.source_prompt,
+      "",
+      "Update request:",
+      updateRequest,
+    ].join("\n")
+    const updated = await updateDashboardView({
+      userId: user.id,
+      id: view.id,
+      title: generated.spec.title,
+      description: generated.spec.description,
+      sourcePrompt,
+      spec: generated.spec,
+    })
+    if (!updated) redirect("/app/dashboard")
+
+    await createDashboardViewRun({
+      userId: user.id,
+      dashboardViewId: view.id,
+      status: "success",
+      inputWindowStart: generated.result.input_window_start,
+      inputWindowEnd: generated.result.input_window_end,
+      result: generated.result,
+      modelVersion: models.dashboardModelId,
+      error: null,
+    })
+    status = "success"
+  } catch (generationError) {
+    error =
+      generationError instanceof Error
+        ? generationError.message
+        : "dashboard update failed"
+    await createDashboardViewRun({
+      userId: user.id,
+      dashboardViewId: view.id,
+      status: "error",
+      inputWindowStart: null,
+      inputWindowEnd: null,
+      result: null,
+      modelVersion: models.dashboardModelId,
+      error,
+    })
+  }
+
+  await createDashboardViewGenerationLog({
+    userId: user.id,
+    dashboardViewId: view.id,
+    action: "update",
+    status,
+    sourcePrompt: updateRequest,
+    packet,
+    attempts,
+    modelVersion: models.dashboardModelId,
+    error,
+  })
 
   revalidatePath("/app/dashboard")
   redirect(`/app/dashboard?view=${view.slug}`)

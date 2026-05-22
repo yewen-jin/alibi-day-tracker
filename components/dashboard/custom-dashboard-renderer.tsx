@@ -3,8 +3,11 @@ import type { DashboardViewResult, DashboardViewSpec } from "@/lib/dashboard-vie
 import {
   archiveDashboardViewAction,
   publishDashboardViewAction,
+  renameDashboardViewAction,
   refreshDashboardViewAction,
+  updateDashboardViewAction,
 } from "@/app/actions/dashboard-views"
+import { CustomViewEditForm } from "@/components/dashboard/custom-view-edit-form"
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "no data window yet"
@@ -75,6 +78,12 @@ export function CustomDashboardRenderer({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <CustomViewEditForm
+              title={view.title}
+              description={view.description}
+              renameAction={renameDashboardViewAction.bind(null, view.id)}
+              updateAction={updateDashboardViewAction.bind(null, view.id)}
+            />
             {view.status === "draft" ? (
               <form action={publishDashboardViewAction.bind(null, view.id)}>
                 <button

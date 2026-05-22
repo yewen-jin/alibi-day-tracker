@@ -23,6 +23,18 @@ export function isMissingDashboardViewsSchema(error: unknown) {
   )
 }
 
+function isUnavailableDashboardGenerationLog(error: unknown) {
+  if (isMissingDashboardViewsSchema(error)) return true
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown; constraint?: unknown }).code === "23514" &&
+    (error as { constraint?: unknown }).constraint ===
+      "dashboard_view_generation_logs_action_check"
+  )
+}
+
 export async function hasDashboardViewsSchema() {
   try {
     const row = await getDb()
@@ -142,6 +154,54 @@ export async function publishDashboardView(
   return (row as DashboardViewRecord | undefined) ?? null
 }
 
+export async function updateDashboardView(input: {
+  userId: string
+  id: string
+  title: string
+  description: string
+  sourcePrompt: string
+  spec: DashboardViewSpec
+}): Promise<DashboardViewRecord | null> {
+  const row = await getDb()
+    .updateTable("dashboard_views")
+    .set({
+      title: input.title,
+      description: input.description,
+      source_prompt: input.sourcePrompt,
+      spec: input.spec,
+      updated_at: sql`now()`,
+    })
+    .where("user_id", "=", input.userId)
+    .where("id", "=", input.id)
+    .where("status", "!=", "archived")
+    .returningAll()
+    .executeTakeFirst()
+
+  return (row as DashboardViewRecord | undefined) ?? null
+}
+
+export async function renameDashboardView(input: {
+  userId: string
+  id: string
+  title: string
+  description: string
+}): Promise<DashboardViewRecord | null> {
+  const row = await getDb()
+    .updateTable("dashboard_views")
+    .set({
+      title: input.title,
+      description: input.description,
+      updated_at: sql`now()`,
+    })
+    .where("user_id", "=", input.userId)
+    .where("id", "=", input.id)
+    .where("status", "!=", "archived")
+    .returningAll()
+    .executeTakeFirst()
+
+  return (row as DashboardViewRecord | undefined) ?? null
+}
+
 export async function archiveDashboardView(userId: string, id: string) {
   await getDb()
     .updateTable("dashboard_views")
@@ -206,7 +266,7 @@ export async function getLatestDashboardViewRun(
 export async function createDashboardViewGenerationLog(input: {
   userId: string
   dashboardViewId: string | null
-  action: "create" | "refresh"
+  action: "create" | "refresh" | "update"
   status: "success" | "error"
   sourcePrompt: string
   packet: DashboardViewEvidencePacket
@@ -250,7 +310,7 @@ export async function createDashboardViewGenerationLog(input: {
 
     return row as DashboardViewGenerationLogRecord
   } catch (error) {
-    if (isMissingDashboardViewsSchema(error)) return null
+    if (isUnavailableDashboardGenerationLog(error)) return null
     throw error
   }
 }

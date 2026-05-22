@@ -26,6 +26,7 @@ const dashboardRefreshOutputSchema = z
 
 export type DashboardCreateOutput = z.infer<typeof dashboardCreateOutputSchema>
 export type DashboardRefreshOutput = z.infer<typeof dashboardRefreshOutputSchema>
+export type DashboardUpdateOutput = DashboardCreateOutput
 
 type GenerateTextFn = typeof generateText
 
@@ -39,7 +40,7 @@ interface DashboardGenerationOptions {
 }
 
 export interface DashboardGenerationAttemptLog {
-  mode: "create" | "refresh"
+  mode: "create" | "refresh" | "update"
   attempt: number
   status: "success" | "error"
   error: string | null
@@ -72,10 +73,10 @@ export function dashboardGenerationErrorMessage() {
   return "couldn't create a valid dashboard snapshot. try a narrower dashboard request or add more saved evidence."
 }
 
-function dashboardOutputContract(mode: "create" | "refresh") {
+function dashboardOutputContract(mode: "create" | "refresh" | "update") {
   return [
     "Schema reference:",
-    mode === "create"
+    mode === "create" || mode === "update"
       ? "{ spec: DashboardSpec, result: DashboardResult }"
       : "{ result: DashboardResult }",
     "DashboardSpec = { version: 1, title: string, description: string, sections: SectionSpec[] }",
@@ -92,7 +93,7 @@ function dashboardOutputContract(mode: "create" | "refresh") {
   ].join("\n")
 }
 
-export function dashboardSystemPrompt(mode: "create" | "refresh") {
+export function dashboardSystemPrompt(mode: "create" | "refresh" | "update") {
   return [
     "You are the dashboard agent for Alibi. Generate one structured object for a fixed, safe dashboard renderer.",
     "Use only the provided evidence packet. The server fetched all available data.",
@@ -130,7 +131,9 @@ export function dashboardSystemPrompt(mode: "create" | "refresh") {
     "- Use 2 to 5 sections for new dashboards unless the request is very narrow.",
     mode === "refresh"
       ? "- Preserve the saved spec. Regenerate only result.sections matching the existing section ids and types."
-      : "- Create a spec that directly reflects the user's requested dashboard.",
+      : mode === "update"
+        ? "- Revise the saved dashboard spec to reflect the user's update request. You may change section ids, titles, descriptions, section types, metrics, sources, and order."
+        : "- Create a spec that directly reflects the user's requested dashboard.",
     "",
     dashboardOutputContract(mode),
     "",
@@ -165,7 +168,7 @@ function objectFromNoObjectError(error: unknown) {
   return extractJSON(error.text)
 }
 
-function dashboardRepairPrompt(error: unknown, mode: "create" | "refresh") {
+function dashboardRepairPrompt(error: unknown, mode: "create" | "refresh" | "update") {
   return [
     "The previous structured response failed validation.",
     `Validation issue: ${validationIssue(error)}`,
@@ -203,6 +206,33 @@ function refreshPrompt(
     "",
     "Saved dashboard spec:",
     JSON.stringify(spec),
+    "",
+    "Fresh evidence packet:",
+    JSON.stringify(packet),
+  ].filter(Boolean).join("\n")
+}
+
+function updatePrompt(
+  originalPrompt: string,
+  updateRequest: string,
+  spec: DashboardViewSpec,
+  result: DashboardViewResult | null,
+  packet: DashboardViewEvidencePacket,
+  repair: string | null,
+) {
+  return [
+    repair,
+    "Original saved dashboard request:",
+    originalPrompt,
+    "",
+    "User update request:",
+    updateRequest,
+    "",
+    "Current saved dashboard spec:",
+    JSON.stringify(spec),
+    "",
+    result ? "Latest dashboard result:" : null,
+    result ? JSON.stringify(result) : null,
     "",
     "Fresh evidence packet:",
     JSON.stringify(packet),
@@ -278,6 +308,58 @@ export async function generateDashboardCreateSnapshot(
         error: validationIssue(error),
       })
       repair = dashboardRepairPrompt(error, "create")
+    }
+  }
+
+  throw new Error(dashboardGenerationErrorMessage(), { cause: lastError })
+}
+
+export async function generateDashboardUpdateSnapshot(
+  originalPrompt: string,
+  updateRequest: string,
+  spec: DashboardViewSpec,
+  result: DashboardViewResult | null,
+  packet: DashboardViewEvidencePacket,
+  models: DashboardGenerationModels,
+  options: DashboardGenerationOptions = {},
+): Promise<{ spec: DashboardViewSpec; result: DashboardViewResult }> {
+  let repair: string | null = null
+  let lastError: unknown = null
+  const generate = options.generate ?? generateText
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      let output: unknown
+      try {
+        const generated = await generate({
+          model: models.dashboardModel,
+          output: Output.object({ schema: dashboardCreateOutputSchema }),
+          system: dashboardSystemPrompt("update"),
+          prompt: updatePrompt(originalPrompt, updateRequest, spec, result, packet, repair),
+        })
+        output = generated.output
+      } catch (error) {
+        output = objectFromNoObjectError(error)
+        if (!output) throw error
+      }
+
+      const snapshot = validateDashboardCreateOutput(output, packet)
+      options.onAttempt?.({
+        mode: "update",
+        attempt: attempt + 1,
+        status: "success",
+        error: null,
+      })
+      return snapshot
+    } catch (error) {
+      lastError = error
+      options.onAttempt?.({
+        mode: "update",
+        attempt: attempt + 1,
+        status: "error",
+        error: validationIssue(error),
+      })
+      repair = dashboardRepairPrompt(error, "update")
     }
   }
 

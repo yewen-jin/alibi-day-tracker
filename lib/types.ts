@@ -176,7 +176,7 @@ export interface DashboardViewGenerationLogRecord {
   id: string
   user_id: string
   dashboard_view_id: string | null
-  action: "create" | "refresh"
+  action: "create" | "refresh" | "update"
   status: "success" | "error"
   source_prompt: string
   model_version: string | null
