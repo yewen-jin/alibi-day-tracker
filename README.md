@@ -122,8 +122,10 @@ When Google Calendar is connected, Alibi creates a separate secondary `alibi` ca
 
 Hosted OpenRouter defaults are centralized in [`lib/ai.ts`](./lib/ai.ts):
 
-- `fastModelId` is `openai/gpt-4.1-nano` for routing, structured extraction, and short acknowledgments.
-- `companionModelId` is `openai/gpt-5-mini` for user-visible companion chat, saved-block analysis, and proactive insight copy.
+- `fastModelId` is `deepseek/deepseek-chat-v3` for routing, structured extraction, and short acknowledgments.
+- `companionModelId` is `anthropic/claude-haiku-4.5` for user-visible companion chat, saved-block analysis, proactive insight copy, and internal custom-dashboard analysis.
+
+Custom dashboard views fetch data on the server, build a bounded evidence packet, and ask the internal dashboard model role to return a validated dashboard spec plus a structured result snapshot. The renderer uses a fixed component palette; model output can choose sections and copy supplied evidence references, but it cannot introduce arbitrary UI, database queries, or unsupported source excerpts.
 
 Per-user BYOK resolution lives in [`lib/ai-settings.ts`](./lib/ai-settings.ts). Supported providers are OpenRouter, OpenAI, OpenAI-compatible HTTPS endpoints, and Anthropic. Custom API keys are encrypted with `ALIBI_SECRET_ENCRYPTION_KEY` and stored in `user_secret_keys`.
 
@@ -338,7 +340,7 @@ alibi-day-tracker/
 │   ├── proactive-bubble.tsx
 │   ├── companion-response.tsx
 │   └── dashboard/
-│       ├── adhd-markers.tsx
+│       ├── productivity-patterns.tsx
 │       ├── notes-mirror.tsx
 │       ├── calendar-view.tsx
 │       ├── rhythm-chart.tsx

@@ -257,6 +257,49 @@ interface GoogleCalendarEventSyncsTable {
   updated_at: GeneratedTimestamp;
 }
 
+interface DashboardViewsTable {
+  id: Generated<string>;
+  user_id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  status: Generated<string>;
+  source_prompt: string;
+  spec: JsonValue;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+  published_at: NullableTimestamp;
+}
+
+interface DashboardViewRunsTable {
+  id: Generated<string>;
+  dashboard_view_id: string;
+  user_id: string;
+  status: string;
+  input_window_start: NullableTimestamp;
+  input_window_end: NullableTimestamp;
+  result: JsonValue | null;
+  model_version: string | null;
+  error: string | null;
+  created_at: GeneratedTimestamp;
+}
+
+interface DashboardViewGenerationLogsTable {
+  id: Generated<string>;
+  user_id: string;
+  dashboard_view_id: string | null;
+  action: string;
+  status: string;
+  source_prompt: string;
+  model_version: string | null;
+  input_window_start: NullableTimestamp;
+  input_window_end: NullableTimestamp;
+  evidence_summary: Generated<JsonValue>;
+  attempts: Generated<JsonValue>;
+  error: string | null;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   app_users: AppUsersTable;
   entries: EntriesTable;
@@ -275,6 +318,9 @@ export interface Database {
   user_ai_provider_settings: UserAiProviderSettingsTable;
   google_calendar_connections: GoogleCalendarConnectionsTable;
   google_calendar_event_syncs: GoogleCalendarEventSyncsTable;
+  dashboard_views: DashboardViewsTable;
+  dashboard_view_runs: DashboardViewRunsTable;
+  dashboard_view_generation_logs: DashboardViewGenerationLogsTable;
 }
 
 export type AppUserRow = Selectable<AppUsersTable>;

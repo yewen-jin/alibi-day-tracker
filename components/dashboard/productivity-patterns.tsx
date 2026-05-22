@@ -7,7 +7,7 @@ import type {
 import { buildWorkPatternObservations } from "@/lib/dashboard-data"
 import { PatternSources } from "@/components/dashboard/pattern-sources"
 
-interface AdhdMarkersProps {
+interface ProductivityPatternsProps {
   blocks: TimeBlock[]
   insights?: TimeBlockInsight[]
   chatInsights?: CompanionMessageInsight[]
@@ -15,13 +15,13 @@ interface AdhdMarkersProps {
   noteVersionCreatedAtById?: Map<string, string>
 }
 
-export function AdhdMarkers({
+export function ProductivityPatterns({
   blocks,
   insights = [],
   chatInsights = [],
   chatMessages = [],
   noteVersionCreatedAtById,
-}: AdhdMarkersProps) {
+}: ProductivityPatternsProps) {
   const patterns = buildWorkPatternObservations({
     blocks,
     noteInsights: insights,

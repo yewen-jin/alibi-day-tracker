@@ -21,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "alibi — for the days you can't see clearly",
   description:
-    "Alibi is a witness with a warm voice. Log what you did, then let it remind you when your brain forgets. Built for ADHD minds.",
+    "Alibi is a witness with a warm voice. Log what you did, then let it reflect your productivity patterns back clearly.",
   manifest: "/site.webmanifest",
   icons: {
     icon: [

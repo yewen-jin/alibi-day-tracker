@@ -7,8 +7,8 @@ create table if not exists user_ai_provider_settings (
     provider in ('openrouter', 'openai', 'openai_compatible', 'anthropic')
   ),
   base_url text,
-  fast_model text not null default 'openai/gpt-4.1-nano',
-  companion_model text not null default 'openai/gpt-5-mini',
+  fast_model text not null default 'deepseek/deepseek-chat-v3',
+  companion_model text not null default 'anthropic/claude-haiku-4.5',
   key_preview text,
   disclosure_accepted_at timestamptz,
   disabled_at timestamptz,

@@ -23,8 +23,8 @@ No test runner is configured. `npm run build` is the primary verification step.
 - **Tailwind CSS v4** with `@theme inline` tokens and `@layer components` classes
 - **Supabase** for Postgres, auth (email + OAuth), and RLS
 - **AI SDK v6** via **OpenRouter** (OpenAI-compatible provider)
-  - `openai/gpt-4.1-nano` — routing, extraction, acknowledgments (fast/cheap)
-  - `openai/gpt-5-mini` — user-visible conversation, analysis, insights
+  - `deepseek/deepseek-chat-v3` — routing, extraction, acknowledgments (fast/cheap)
+  - `anthropic/claude-haiku-4.5` — user-visible conversation, analysis, insights
 - **Zod** for structured AI output validation
 
 ## Architecture

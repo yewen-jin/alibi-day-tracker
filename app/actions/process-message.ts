@@ -1508,7 +1508,7 @@ export async function processCompanionMessage(
     // Belt-and-suspenders: when a pending draft is open and the user's reply
     // didn't qualify for the skip-router fast path (long message or contains
     // a question mark), still run the dedicated clarifier so we don't lose
-    // draft fields the router (gpt-4.1-nano class) may have missed inline.
+    // draft fields the fast router may have missed inline.
     if (pendingDraft) {
       clarificationDraft = await completeDraftFromClarification(
         models,

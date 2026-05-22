@@ -107,7 +107,7 @@ transition hover:bg-alibi-lavender/15
 ```
 
 ### `.alibi-doc-card`
-Concave inner tile. Nested inside `.alibi-card` — examples, prompts, roadmap items, ADHD pattern grid. No border; inset shadow creates a recessed look.
+Concave inner tile. Nested inside `.alibi-card` — examples, prompts, roadmap items, productivity pattern grid. No border; inset shadow creates a recessed look.
 ```
 rounded-2xl bg-alibi-lavender/8 p-4
 shadow-[0_1px_2px_rgba(50,83,199,0.05),inset_0_2px_5px_rgba(50,83,199,0.08)]

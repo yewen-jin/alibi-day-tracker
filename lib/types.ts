@@ -143,6 +143,51 @@ export interface TimeBlockCategoryRecord {
   updated_at: string
 }
 
+export type DashboardViewStatus = "draft" | "published" | "archived"
+
+export interface DashboardViewRecord {
+  id: string
+  user_id: string
+  slug: string
+  title: string
+  description: string | null
+  status: DashboardViewStatus
+  source_prompt: string
+  spec: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  published_at: string | null
+}
+
+export interface DashboardViewRunRecord {
+  id: string
+  dashboard_view_id: string
+  user_id: string
+  status: "success" | "error"
+  input_window_start: string | null
+  input_window_end: string | null
+  result: Record<string, unknown> | null
+  model_version: string | null
+  error: string | null
+  created_at: string
+}
+
+export interface DashboardViewGenerationLogRecord {
+  id: string
+  user_id: string
+  dashboard_view_id: string | null
+  action: "create" | "refresh" | "update"
+  status: "success" | "error"
+  source_prompt: string
+  model_version: string | null
+  input_window_start: string | null
+  input_window_end: string | null
+  evidence_summary: Record<string, unknown>
+  attempts: Array<Record<string, unknown>>
+  error: string | null
+  created_at: string
+}
+
 export type CompanionMessageRole = "user" | "assistant"
 export type CompanionMessageType =
   | "chat"

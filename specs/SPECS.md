@@ -261,6 +261,8 @@ AI calls should use a split-model strategy:
 
 Hosted defaults use OpenRouter. Authenticated users may choose custom provider mode with an encrypted user-owned API key.
 
+The hosted fast model is `deepseek/deepseek-chat-v3`. The internal dashboard model role is not a third user-facing setting; it aliases the resolved companion model so BYOK users keep the same two visible model slots. Custom dashboard creation and refresh are server-owned: Alibi loads the dashboard data, builds a bounded evidence packet, asks the dashboard model for structured analysis, validates the spec/result with Zod, and renders only the fixed dashboard component palette. Evidence references in model output must copy entries from the packet rather than inventing sources.
+
 BYOK requirements:
 
 - supported providers must be allowlisted;

@@ -132,9 +132,9 @@ const SECTIONS: WikiSection[] = [
     intro:
       "alibi runs on two model slots. a fast slot handles routing, extraction, and acknowledgments. a companion slot writes the voice that talks back. you can keep the hosted defaults or bring your own keys from /app/settings.",
     points: [
-      "hosted default fast model is openai gpt-4.1-nano. it classifies what you typed and pulls structured fields like time and category.",
+      "hosted default fast model is deepseek chat v3. it classifies what you typed and pulls structured fields like time and category.",
       "hosted default companion model is anthropic claude haiku 4.5. it writes the reply and matches the alibi voice guide.",
-      "non-visible work like chat-insight and note-insight extraction runs on the fast model so the bill stays small.",
+      "non-visible work like chat-insight and note-insight extraction runs on the fast model so the bill stays small. custom dashboards use the companion model internally to analyze a server-built evidence packet.",
       "chat-insight extraction is deferred past the response, so the reply ships first and the derived insight lands a moment later.",
       "the analyse path uses the fast model to gather evidence from the memory packet, then the companion model rewrites only that summary in the alibi voice. the long evidence packet never pays companion-tier price.",
       "on direct anthropic profiles, the system prompt and voice guide are sent with ephemeral prompt caching, so repeat turns bill cached input at a fraction of the normal rate.",
