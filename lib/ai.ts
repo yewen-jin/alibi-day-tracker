@@ -7,7 +7,7 @@ const openrouter = createOpenAICompatible({
   apiKey: process.env.OPENROUTER_API_KEY,
 })
 
-export const fastModelId = "openai/gpt-4.1-nano"
+export const fastModelId = "deepseek/deepseek-chat-v3"
 export const companionModelId = "anthropic/claude-haiku-4.5"
 
 // Cheap, low-latency model for routing, extraction, and terse acknowledgments.

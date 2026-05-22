@@ -1,7 +1,7 @@
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import type { DashboardSkill, DashboardSkillInput } from "@/lib/skills/types"
 
-function AdhdResearchView(input: DashboardSkillInput) {
+function ProductivityPatternView(input: DashboardSkillInput) {
   return (
     <DashboardOverview
       blocks={input.blocks}
@@ -14,12 +14,13 @@ function AdhdResearchView(input: DashboardSkillInput) {
   )
 }
 
-export const adhdResearchSkill: DashboardSkill = {
-  id: "adhd-research",
-  slug: "adhd",
-  label: "adhd reflections",
+export const productivityPatternSkill: DashboardSkill = {
+  id: "productivity-pattern",
+  slug: "productivity-pattern",
+  label: "productivity pattern",
   tagline: "what you've been doing",
   description:
     "patterns from notes and chat: friction, avoidance, hyperfocus, useful drift, emotional load. evidence-led, no scoring.",
-  render: AdhdResearchView,
+  aliases: ["adhd"],
+  render: ProductivityPatternView,
 }

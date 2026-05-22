@@ -742,7 +742,7 @@ export function buildWorkPatternObservations({
     .slice(0, 8)
 }
 
-/* ─────────────────── ADHD Marker Stats ─────────────────── */
+/* ─────────────────── Productivity Pattern Stats ─────────────────── */
 
 export interface MarkerStat {
   label: string

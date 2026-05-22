@@ -172,7 +172,7 @@ describe("ai provider validation", () => {
     const { validateAiProviderConfig } = await import("@/lib/ai-settings");
     const result = validateAiProviderConfig({
       provider: "openrouter",
-      fastModel: "openai/gpt-4.1-nano",
+      fastModel: "deepseek/deepseek-chat-v3",
       companionModel: "openai/gpt-5-mini",
     });
 
@@ -321,6 +321,8 @@ describe("ai profile settings", () => {
 
     const models = await resolveAiModelsForUser("user-1");
     expect(models.mode).toBe("hosted");
+    expect(models.fastModelId).toBe("deepseek/deepseek-chat-v3");
+    expect(models.dashboardModelId).toBe(models.companionModelId);
 
     await expect(
       resolveAiModelsForUser("user-1", { throwOnSecretError: true }),

@@ -160,12 +160,13 @@ Repository status:
 AI model routing:
 
 - Hosted OpenRouter access is centralized in `lib/ai.ts`.
-- Hosted `fastModel` uses `openai/gpt-4.1-nano` for routing, structured extraction, and short acknowledgments.
-- Hosted `companionModel` uses `openai/gpt-5-mini` for user-visible companion chat, saved-block analysis, and proactive insight copy.
+- Hosted `fastModel` uses `deepseek/deepseek-chat-v3` for routing, structured extraction, and short acknowledgments.
+- Hosted `companionModel` uses `anthropic/claude-haiku-4.5` for user-visible companion chat, saved-block analysis, proactive insight copy, and internal custom-dashboard analysis.
 - Per-user model resolution lives in `lib/ai-settings.ts` and currently supports hosted mode, OpenRouter, OpenAI, OpenAI-compatible HTTPS endpoints, and Anthropic.
 - New `companion_messages` rows record the actual selected companion model in `model`; the Supabase backfill script preserves legacy rows as `openai/gpt-4o-mini`.
 - Companion-facing prompts share the reusable `alibiCompanionGuide` in `lib/companion-voice.ts`.
 - Note insight generation, chat insight extraction, and proactive insight generation still use the hosted shared models directly and have not yet been fully switched to per-user BYOK resolution.
+- Custom dashboard views use an internal `dashboardModel` role that aliases the resolved companion model. The server builds the evidence packet, the model returns a validated spec and result snapshot, refreshes reuse the saved spec, and the fixed renderer palette displays only validated section data and copied evidence references.
 
 UI status:
 

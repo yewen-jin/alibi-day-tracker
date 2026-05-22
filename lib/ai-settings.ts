@@ -73,8 +73,10 @@ export interface ResolvedAiModels {
   provider: string;
   fastModelId: string;
   companionModelId: string;
+  dashboardModelId: string;
   fastModel: LanguageModel;
   companionModel: LanguageModel;
+  dashboardModel: LanguageModel;
 }
 
 function normalizeProvider(value: string | null | undefined): AiProviderId {
@@ -693,8 +695,10 @@ export async function resolveAiModelsForUser(
       provider: "openrouter",
       fastModelId,
       companionModelId,
+      dashboardModelId: companionModelId,
       fastModel,
       companionModel,
+      dashboardModel: companionModel,
     };
   }
 
@@ -704,8 +708,10 @@ export async function resolveAiModelsForUser(
       provider: "openrouter",
       fastModelId,
       companionModelId,
+      dashboardModelId: companionModelId,
       fastModel,
       companionModel,
+      dashboardModel: companionModel,
     };
   }
 
@@ -728,8 +734,10 @@ export async function resolveAiModelsForUser(
       provider: "openrouter",
       fastModelId,
       companionModelId,
+      dashboardModelId: companionModelId,
       fastModel,
       companionModel,
+      dashboardModel: companionModel,
     };
   }
   const providerConfig = AI_PROVIDERS[settings.provider];
@@ -741,8 +749,10 @@ export async function resolveAiModelsForUser(
       provider: "openrouter",
       fastModelId,
       companionModelId,
+      dashboardModelId: companionModelId,
       fastModel,
       companionModel,
+      dashboardModel: companionModel,
     };
   }
 
@@ -754,8 +764,10 @@ export async function resolveAiModelsForUser(
       provider: settings.provider,
       fastModelId: settings.fastModel,
       companionModelId: settings.companionModel,
+      dashboardModelId: settings.companionModel,
       fastModel: provider(settings.fastModel),
       companionModel: provider(settings.companionModel),
+      dashboardModel: provider(settings.companionModel),
     };
   }
 
@@ -770,8 +782,10 @@ export async function resolveAiModelsForUser(
     provider: settings.provider,
     fastModelId: settings.fastModel,
     companionModelId: settings.companionModel,
+    dashboardModelId: settings.companionModel,
     fastModel: provider(settings.fastModel),
     companionModel: provider(settings.companionModel),
+    dashboardModel: provider(settings.companionModel),
   };
 }
 

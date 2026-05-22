@@ -22,5 +22,6 @@ export interface DashboardSkill {
   label: string
   tagline: string
   description: string
+  aliases?: string[]
   render: (input: DashboardSkillInput) => ReactNode
 }

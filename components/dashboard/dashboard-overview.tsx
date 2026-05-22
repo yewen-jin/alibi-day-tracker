@@ -8,7 +8,7 @@ import type {
   TimeBlockInsight,
 } from "@/lib/types"
 import { StatsOverview } from "@/components/dashboard/stats-overview"
-import { AdhdMarkers } from "@/components/dashboard/adhd-markers"
+import { ProductivityPatterns } from "@/components/dashboard/productivity-patterns"
 import { NotesMirror } from "@/components/dashboard/notes-mirror"
 import { ChatMirror } from "@/components/dashboard/chat-mirror"
 
@@ -72,7 +72,7 @@ export function DashboardOverview({
           </Link>
         </section>
         <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
-        <AdhdMarkers
+        <ProductivityPatterns
           blocks={blocks}
           insights={insights}
           chatInsights={chatInsights}
@@ -92,7 +92,7 @@ export function DashboardOverview({
         noteVersionCreatedAtById={noteVersionCreatedAtById}
       />
       <ChatMirror blocks={blocks} insights={chatInsights} messages={chatMessages} />
-      <AdhdMarkers
+      <ProductivityPatterns
         blocks={blocks}
         insights={insights}
         chatInsights={chatInsights}
