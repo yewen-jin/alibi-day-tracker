@@ -1,7 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { after } from "next/server"
 import { generateNoteInsight } from "@/lib/ai-note-insights"
+import { getDb } from "@/lib/db/client"
 import { invalidateMemoryContextForUser } from "@/lib/memory-context"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import { attachEvidenceSourceId } from "@/lib/evidence-claims"
@@ -433,39 +435,58 @@ async function preserveNoteVersion(
   return (data as { id: string } | null)?.id ?? null
 }
 
-async function storeNoteInsight(
-  supabase: Supabase,
+async function storeNoteInsightAfterResponse(
   userId: string,
   timeBlock: TimeBlock,
   noteVersionId: string | null,
 ) {
   const insight = await generateNoteInsight(timeBlock)
+  const db = getDb()
 
   if (!insight) {
-    await supabase
-      .from("time_block_insights")
-      .delete()
-      .eq("time_block_id", timeBlock.id)
-      .eq("user_id", userId)
+    await db
+      .deleteFrom("time_block_insights")
+      .where("time_block_id", "=", timeBlock.id)
+      .where("user_id", "=", userId)
+      .execute()
     return
   }
 
-  await supabase
-    .from("time_block_insights")
-    .upsert(
-      {
-        time_block_id: timeBlock.id,
-        note_version_id: noteVersionId,
-        user_id: userId,
-        source_notes: normalizeNotes(timeBlock.notes),
-        ...insight,
-        evidence_claims: attachEvidenceSourceId(
-          insight.evidence_claims,
-          noteVersionId ?? timeBlock.id,
-        ),
-      },
-      { onConflict: "time_block_id" },
+  const values = {
+    time_block_id: timeBlock.id,
+    note_version_id: noteVersionId,
+    user_id: userId,
+    source_notes: normalizeNotes(timeBlock.notes),
+    ...insight,
+    evidence_claims: attachEvidenceSourceId(
+      insight.evidence_claims,
+      noteVersionId ?? timeBlock.id,
+    ),
+  }
+
+  await db
+    .insertInto("time_block_insights")
+    .values(values)
+    .onConflict((oc) =>
+      oc.column("time_block_id").doUpdateSet({
+        note_version_id: values.note_version_id,
+        source_notes: values.source_notes,
+        actions: values.actions,
+        emotional_tone: values.emotional_tone,
+        friction_points: values.friction_points,
+        avoidance_signals: values.avoidance_signals,
+        hyperfocus_signals: values.hyperfocus_signals,
+        satisfaction_signals: values.satisfaction_signals,
+        uncertainty_signals: values.uncertainty_signals,
+        people: values.people,
+        projects: values.projects,
+        themes: values.themes,
+        evidence_excerpt: values.evidence_excerpt,
+        evidence_claims: values.evidence_claims,
+        model_version: values.model_version,
+      }),
     )
+    .execute()
 }
 
 async function preserveNotesAndInsights(
@@ -487,12 +508,19 @@ async function preserveNotesAndInsights(
     timeBlock.notes,
     source,
   )
-  // Run inline. Wrapping this in `after()` looked tempting for latency, but
-  // the Supabase client reads cookies on every request, and Next 16 closes
-  // the cookies handle after the response ships — the deferred upsert would
-  // throw silently and notes mirror entries would go missing. The extraction
-  // is fast-model now, so the latency cost is small.
-  await storeNoteInsight(supabase, userId, timeBlock, noteVersionId)
+  after(() =>
+    storeNoteInsightAfterResponse(userId, timeBlock, noteVersionId).catch((error) => {
+      console.error("failed to store note insight", error)
+    }),
+  )
+}
+
+function syncCalendarAfterResponse(userId: string, timeBlock: TimeBlock) {
+  after(() =>
+    syncTimeBlockToGoogleCalendar(userId, timeBlock).catch((error) => {
+      console.error("failed to sync time block to google calendar", error)
+    }),
+  )
 }
 
 function sortCategories(categories: TimeBlockCategoryRecord[]) {
@@ -1022,7 +1050,7 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
     }
   }
 
-  await syncTimeBlockToGoogleCalendar(user.id, timeBlock).catch(() => undefined)
+  syncCalendarAfterResponse(user.id, timeBlock)
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
@@ -1127,7 +1155,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
       noteSourceFromInput(input.note_source),
     )
 
-    await syncTimeBlockToGoogleCalendar(user.id, timeBlock as TimeBlock).catch(() => undefined)
+    syncCalendarAfterResponse(user.id, timeBlock as TimeBlock)
 
     revalidatePath("/app")
     revalidatePath("/app/dashboard")
@@ -1160,7 +1188,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
     noteSourceFromInput(input.note_source),
   )
 
-  await syncTimeBlockToGoogleCalendar(user.id, timeBlock as TimeBlock).catch(() => undefined)
+  syncCalendarAfterResponse(user.id, timeBlock as TimeBlock)
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")

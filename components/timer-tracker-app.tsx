@@ -576,8 +576,8 @@ export function TimerTrackerApp({
           </section>
         )}
 
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-          <div className="flex flex-col gap-5">
+        <section className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+          <div className="flex min-w-0 flex-col gap-5">
             <ActiveTimerCard
               activeTimer={activeTimer}
               loading={loading}

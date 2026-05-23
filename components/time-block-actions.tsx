@@ -18,17 +18,21 @@ import {
   Plus,
   RotateCcw,
   Send,
+  Square,
   Trash2,
   Volume2,
   VolumeX,
   X,
 } from "lucide-react";
+import { VoiceCaptureStatusRow } from "@/components/voice-capture-status";
 import type {
   CompanionMessage,
   TimeBlock,
   TimeBlockCategory,
   TimeBlockCategoryRecord,
 } from "@/lib/types";
+import { useVoiceCapture } from "@/lib/use-voice-capture";
+import { voiceDebugLog } from "@/lib/voice-recorder-stop";
 import { slugifyCategoryName } from "@/lib/block-draft-utils";
 import {
   createCategoryMetaMap,
@@ -138,14 +142,28 @@ export function CompanionChatPanel({
   onClose?: () => void;
 }) {
   const [value, setValue] = useState("");
-  const [recording, setRecording] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const latestMessageRef = useRef<HTMLDivElement>(null);
   const lastSpokenAssistantIdRef = useRef<string | null>(null);
+  const submittedVoiceTranscriptRef = useRef<string | null>(null);
+  const onSubmitRef = useRef(onSubmit);
+  const {
+    status: voiceStatus,
+    durationMs,
+    audioLevel,
+    lastTranscript,
+    error: voiceError,
+    startRecording,
+    stopRecording,
+    resetVoiceState,
+  } = useVoiceCapture({ fileName: "alibi-voice.webm" });
+  const recording = voiceStatus === "recording";
+  const voiceBusy =
+    voiceStatus === "requesting" ||
+    voiceStatus === "recording" ||
+    voiceStatus === "transcribing";
 
   useEffect(() => {
     latestMessageRef.current?.scrollIntoView({
@@ -153,6 +171,10 @@ export function CompanionChatPanel({
       block: "end",
     });
   }, [messages.length, pending]);
+
+  useEffect(() => {
+    onSubmitRef.current = onSubmit;
+  }, [onSubmit]);
 
   useEffect(() => {
     if (!voiceEnabled) return;
@@ -163,6 +185,28 @@ export function CompanionChatPanel({
     lastSpokenAssistantIdRef.current = lastAssistant.id;
     void speakText(lastAssistant.text);
   }, [messages, voiceEnabled]);
+
+  useEffect(() => {
+    if (voiceStatus !== "registered") {
+      submittedVoiceTranscriptRef.current = null;
+      return;
+    }
+    if (voiceStatus !== "registered" || !lastTranscript) return;
+    if (submittedVoiceTranscriptRef.current === lastTranscript) return;
+    submittedVoiceTranscriptRef.current = lastTranscript;
+
+    const submitTimer = window.setTimeout(() => {
+      void onSubmitRef.current(lastTranscript);
+    }, 450);
+    const resetTimer = window.setTimeout(() => {
+      resetVoiceState();
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(submitTimer);
+      window.clearTimeout(resetTimer);
+    };
+  }, [lastTranscript, resetVoiceState, voiceStatus]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -177,7 +221,7 @@ export function CompanionChatPanel({
   };
 
   async function speakText(text: string) {
-    setVoiceError(null);
+    setSpeechError(null);
     audioRef.current?.pause();
 
     try {
@@ -198,60 +242,7 @@ export function CompanionChatPanel({
       audio.onended = () => URL.revokeObjectURL(audio.src);
       await audio.play();
     } catch (error) {
-      setVoiceError(error instanceof Error ? error.message : "speech failed.");
-    }
-  }
-
-  async function transcribeAudio(blob: Blob) {
-    setVoiceError(null);
-    const formData = new FormData();
-    formData.set("file", new File([blob], "alibi-voice.webm", { type: blob.type || "audio/webm" }));
-
-    try {
-      const response = await fetch("/api/cartesia/stt", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json().catch(() => null) as { text?: string; error?: string } | null;
-
-      if (!response.ok) {
-        throw new Error(data?.error ?? "transcription failed.");
-      }
-
-      const transcript = data?.text?.trim();
-      if (transcript) {
-        void onSubmit(transcript);
-      }
-    } catch (error) {
-      setVoiceError(error instanceof Error ? error.message : "transcription failed.");
-    }
-  }
-
-  async function toggleRecording() {
-    if (recording) {
-      mediaRecorderRef.current?.stop();
-      return;
-    }
-
-    setVoiceError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      chunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        setRecording(false);
-        stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        if (blob.size > 0) void transcribeAudio(blob);
-      };
-      recorder.start();
-      setRecording(true);
-    } catch (error) {
-      setVoiceError(error instanceof Error ? error.message : "microphone unavailable.");
+      setSpeechError(error instanceof Error ? error.message : "speech failed.");
     }
   }
 
@@ -341,7 +332,7 @@ export function CompanionChatPanel({
         <div ref={latestMessageRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-4 flex items-end gap-2">
+      <form onSubmit={handleSubmit} className="mt-4 space-y-2">
         <label className="sr-only" htmlFor="companion-message">
           message alibi
         </label>
@@ -358,45 +349,65 @@ export function CompanionChatPanel({
           rows={2}
           disabled={pending}
           placeholder="message alibi"
-          className="alibi-input min-h-11 flex-1 resize-none py-2 leading-6 placeholder:text-alibi-teal/60 disabled:opacity-55"
+          className="alibi-input block min-h-11 w-full resize-none py-2 leading-6 placeholder:text-alibi-teal/60 disabled:opacity-55"
         />
-        <button
-          type="button"
-          onClick={() => setVoiceEnabled((enabled) => !enabled)}
-          aria-label={voiceEnabled ? "mute voice replies" : "play voice replies"}
-          title={voiceEnabled ? "mute voice replies" : "play voice replies"}
-          className="alibi-button-secondary inline-flex h-11 w-11 items-center justify-center"
-        >
-          {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => void toggleRecording()}
-          disabled={pending}
-          aria-label={recording ? "stop recording" : "record voice message"}
-          title={recording ? "stop recording" : "record voice message"}
-          className={cn(
-            "inline-flex h-11 w-11 items-center justify-center",
-            recording ? "alibi-button-stop" : "alibi-button-secondary",
-          )}
-        >
-          <Mic className="h-4 w-4" />
-        </button>
-        <button
-          type="submit"
-          disabled={!value.trim() || pending}
-          aria-label="send message"
-          title="send"
-          className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
-        >
-          {pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setVoiceEnabled((enabled) => !enabled)}
+            aria-label={voiceEnabled ? "mute voice replies" : "play voice replies"}
+            title={voiceEnabled ? "mute voice replies" : "play voice replies"}
+            className="alibi-button-secondary inline-flex h-10 w-10 items-center justify-center px-0"
+          >
+            {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              voiceDebugLog("mic click (chat)", {
+                voiceStatus,
+                recording,
+                pending,
+              });
+              if (recording) {
+                stopRecording();
+              } else {
+                void startRecording();
+              }
+            }}
+            disabled={pending || (voiceBusy && !recording)}
+            aria-label={recording ? "stop recording" : "record voice message"}
+            title={recording ? "stop recording" : "record voice message"}
+            className={cn(
+              "inline-flex h-10 w-10 items-center justify-center px-0",
+              recording ? "alibi-button-stop" : "alibi-button-secondary",
+            )}
+          >
+            {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
+          <button
+            type="submit"
+            disabled={!value.trim() || pending}
+            aria-label="send message"
+            title="send"
+            className="alibi-button-teal inline-flex h-10 w-10 items-center justify-center px-0"
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </button>
+        </div>
       </form>
-      {voiceError && <div className="alibi-banner-error mt-3">{voiceError}</div>}
+      <VoiceCaptureStatusRow
+        status={voiceStatus}
+        durationMs={durationMs}
+        audioLevel={audioLevel}
+        lastTranscript={lastTranscript}
+        error={voiceError}
+      />
+      {speechError && <div className="alibi-banner-error mt-3">{speechError}</div>}
     </section>
   );
 }

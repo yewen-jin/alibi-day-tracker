@@ -32,17 +32,17 @@ export function CustomViewWorkbench({
         </p>
       ) : null}
       {draftViews.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-alibi-lavender/20 pt-4">
-          <span className="text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-alibi-lavender/20 pt-4">
+          <span className="shrink-0 text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
             drafts
           </span>
           {draftViews.map((view) => (
             <Link
               key={view.id}
               href={`/app/dashboard?view=${view.slug}`}
-              className="alibi-button-secondary inline-flex h-9 items-center justify-center px-3 text-xs font-black"
+              className="alibi-button-secondary inline-flex h-9 max-w-[14rem] items-center justify-center px-3 text-xs font-black"
             >
-              {view.title}
+              <span className="truncate">{view.title}</span>
             </Link>
           ))}
         </div>

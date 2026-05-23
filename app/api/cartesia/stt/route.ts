@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 
+const CARTESIA_STT_TIMEOUT_MS = 25_000;
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
@@ -23,14 +25,31 @@ export async function POST(request: Request) {
   body.set("model", process.env.CARTESIA_STT_MODEL ?? "ink-whisper");
   body.set("language", "en");
 
-  const response = await fetch("https://api.cartesia.ai/stt", {
-    method: "POST",
-    headers: {
-      "Cartesia-Version": process.env.CARTESIA_VERSION ?? "2026-03-01",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, CARTESIA_STT_TIMEOUT_MS);
+  let response: Response;
+
+  try {
+    response = await fetch("https://api.cartesia.ai/stt", {
+      method: "POST",
+      headers: {
+        "Cartesia-Version": process.env.CARTESIA_VERSION ?? "2026-03-01",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const message =
+      error instanceof DOMException && error.name === "AbortError"
+        ? "transcription timed out."
+        : "transcription failed.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

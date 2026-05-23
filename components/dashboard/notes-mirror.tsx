@@ -26,7 +26,7 @@ export function NotesMirror({
       </p>
 
       {observations.length === 0 ? (
-        <div className="alibi-banner-info mt-4 border-dashed">
+        <div className="alibi-banner-info mt-4">
           add notes to a few blocks and this panel will start showing themes without scoring them.
         </div>
       ) : (

@@ -125,13 +125,15 @@ Voice is an alternate input/output surface for the same companion flow, not a se
 
 Required behavior:
 
-- microphone input becomes a transcript, then the transcript is submitted through the existing `processCompanionMessage` flow;
+- microphone input is explicit push-to-talk: the user starts recording, then presses stop to finalize capture;
+- stop finalizes the recording, microphone input becomes a transcript, and the transcript is submitted through the existing `processCompanionMessage` flow;
+- recording must show visible state transitions for requesting microphone, recording duration/activity, transcribing, registered transcript, and error cases;
 - assistant text replies can optionally be played back as speech;
 - mute/stop states must be visible and easy to control;
 - raw audio must not be stored by default;
 - Cartesia API keys and access tokens must never be exposed in page source, logs, or persistent client storage.
 
-The first implementation uses push-to-talk browser recording with server-side batch transcription. Realtime streaming can be added later if latency becomes the main product constraint.
+The first implementation uses push-to-talk browser recording with server-side batch transcription. It does not auto-stop on silence or submit until the user presses stop. Realtime streaming and silence-based auto-stop can be added later if latency or hands-free capture becomes the main product constraint.
 
 ### Calendar And Mirror
 
