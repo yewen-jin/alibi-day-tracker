@@ -36,7 +36,7 @@ export default async function SuperadminPage({
   }
 
   if (!(await isSuperadmin(user.id))) {
-    return <SuperadminAccessDenied userEmail={user.email ?? null} />
+    return <SuperadminAccessDenied />
   }
 
   const resolvedSearchParams = await searchParams
@@ -48,7 +48,6 @@ export default async function SuperadminPage({
 
   return (
     <SuperadminDashboard
-      userEmail={user.email ?? null}
       overview={overview}
       users={users}
       windowOptions={SUPERADMIN_WINDOW_OPTIONS}

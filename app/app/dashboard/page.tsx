@@ -49,7 +49,7 @@ export default async function DashboardPage({
   return (
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-6 p-8">
-        <TopNav userEmail={user.email ?? null} activeHref="/app/dashboard" />
+        <TopNav activeHref="/app/dashboard" />
 
         <header className="px-2 sm:px-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

@@ -472,7 +472,7 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
         </form>
       </div>
 
-      <aside className="alibi-card p-5">
+      <aside className="alibi-card self-start p-5">
         <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
           active ai profile
         </p>

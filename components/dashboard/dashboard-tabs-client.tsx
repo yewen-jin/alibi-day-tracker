@@ -33,12 +33,12 @@ export function DashboardTabsClient({
     <div>
       <nav
         aria-label="dashboard views"
-        className="alibi-card flex flex-wrap items-center gap-2 p-3 sm:flex-nowrap sm:gap-1 sm:p-2"
+        className="flex flex-col gap-2 rounded-2xl border border-alibi-blue/12 bg-white p-3 shadow-[0_1px_3px_rgba(50,83,199,0.06),0_6px_20px_rgba(50,83,199,0.09)] sm:flex-row sm:items-center sm:gap-2 sm:rounded-full sm:p-1.5 sm:pl-3"
       >
-        <span className="shrink-0 px-2 text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
+        <span className="shrink-0 px-2 text-xs font-black uppercase tracking-[0.12em] text-alibi-teal sm:px-0">
           view
         </span>
-        <ul className="-mx-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <ul className="-mx-1 flex min-w-0 items-center gap-1 overflow-x-auto px-1 py-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-alibi-lavender/40 sm:[scrollbar-width:none] sm:[&::-webkit-scrollbar]:hidden">
           {tabs.map((tab) => {
             const isActive = tab.slug === activeSlug
             return (
@@ -50,7 +50,7 @@ export function DashboardTabsClient({
                   className={cn(
                     "inline-flex items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold leading-tight transition",
                     isActive
-                      ? "bg-alibi-blue text-white shadow-[0_8px_16px_rgba(50,83,199,0.25)]"
+                      ? "bg-alibi-blue text-white"
                       : "text-alibi-teal hover:-translate-y-0.5 hover:bg-alibi-teal hover:text-white",
                   )}
                 >
@@ -64,7 +64,7 @@ export function DashboardTabsClient({
           type="button"
           aria-expanded={createOpen}
           onClick={() => setCreateOpen((value) => !value)}
-          className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-alibi-pink px-3 py-1.5 text-sm font-bold leading-tight text-white shadow-[0_8px_16px_rgba(191,125,173,0.24)] transition hover:-translate-y-0.5 hover:bg-alibi-teal"
+          className="inline-flex shrink-0 items-center justify-center self-start whitespace-nowrap rounded-full bg-alibi-pink px-3 py-1.5 text-sm font-bold leading-tight text-white shadow-[0_8px_16px_rgba(191,125,173,0.24)] transition hover:-translate-y-0.5 hover:bg-alibi-teal sm:self-auto"
         >
           + new dashboard
         </button>

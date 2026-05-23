@@ -163,11 +163,9 @@ const PROJECT_LABEL: Record<Project, string> = {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-interface AlibiProps {
-  userEmail?: string | null
-}
+interface AlibiProps {}
 
-export function Alibi({ userEmail }: AlibiProps) {
+export function Alibi(_: AlibiProps) {
   const [input, setInput] = useState("")
   const [recording, setRecording] = useState(false)
   const [filed, setFiled] = useState(false)
@@ -290,7 +288,7 @@ export function Alibi({ userEmail }: AlibiProps) {
     <main className="relative h-screen w-full overflow-hidden text-[#2A1F14]">
       {/* Page padding 32px, two-column 40/60 with 24px gap, max 1280px */}
       <div className="mx-auto flex h-full max-w-[1280px] flex-col gap-4 p-6">
-        <TopNav userEmail={userEmail} activeHref="/app" />
+        <TopNav activeHref="/app" />
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-[40fr_60fr]">
           {/* ─────────────────── LEFT — CHAT ─────────────────── */}
           <section

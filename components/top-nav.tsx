@@ -7,12 +7,10 @@ const LINKS = [
   { href: "/app", label: "tracker", icon: Clock3 },
   { href: "/app/dashboard", label: "dashboard", icon: LayoutGrid },
   { href: "/app/calendar", label: "calendar", icon: CalendarDays },
-  { href: "/app/settings", label: "settings", icon: Settings },
   { href: "/docs", label: "docs", icon: BookOpen },
 ]
 
 interface TopNavProps {
-  userEmail?: string | null
   activeHref: string
 }
 
@@ -21,7 +19,8 @@ interface TopNavProps {
  * Glass pill matching the warm-cream alibi aesthetic.
  * Used at the top of /, /dashboard, and /docs.
  */
-export function TopNav({ userEmail, activeHref }: TopNavProps) {
+export function TopNav({ activeHref }: TopNavProps) {
+  const settingsActive = activeHref === "/app/settings"
   return (
     <nav
       aria-label="primary"
@@ -64,16 +63,21 @@ export function TopNav({ userEmail, activeHref }: TopNavProps) {
         })}
       </ul>
 
-      {/* Email + sign out */}
+      {/* Settings + sign out */}
       <div className="flex items-center gap-2">
-        {userEmail && (
-          <span
-            className="hidden max-w-[180px] truncate font-mono text-xs font-semibold tracking-[0.04em] text-alibi-teal md:inline"
-            title={userEmail}
-          >
-            {userEmail}
-          </span>
-        )}
+        <Link
+          href="/app/settings"
+          aria-label="settings"
+          aria-current={settingsActive ? "page" : undefined}
+          className={cn(
+            "inline-flex h-9 w-9 items-center justify-center rounded-full transition",
+            settingsActive
+              ? "bg-alibi-blue text-white shadow-[0_8px_16px_rgba(50,83,199,0.25)]"
+              : "text-alibi-teal hover:-translate-y-0.5 hover:bg-alibi-teal hover:text-white"
+          )}
+        >
+          <Settings className="h-4 w-4" strokeWidth={2.2} />
+        </Link>
         <SignOutButton />
       </div>
     </nav>
