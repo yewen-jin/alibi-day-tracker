@@ -18,15 +18,12 @@ import type {
 } from "@/lib/types"
 
 interface SuperadminDashboardProps {
-  userEmail?: string | null
   overview: SuperadminOverview
   users: SuperadminUserUsageRow[]
   windowOptions: readonly number[]
 }
 
-interface SuperadminAccessDeniedProps {
-  userEmail?: string | null
-}
+interface SuperadminAccessDeniedProps {}
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -52,13 +49,11 @@ function formatDateTime(value: string | null) {
   return dateFormatter.format(date)
 }
 
-export function SuperadminAccessDenied({
-  userEmail,
-}: SuperadminAccessDeniedProps) {
+export function SuperadminAccessDenied(_: SuperadminAccessDeniedProps) {
   return (
     <main className="alibi-page px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6">
-        <TopNav userEmail={userEmail ?? null} activeHref="/app/superadmin" />
+        <TopNav activeHref="/app/superadmin" />
 
         <section className="alibi-card-pop flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
           <ShieldAlert className="mb-5 h-10 w-10 text-alibi-pink" strokeWidth={2.2} />
@@ -83,7 +78,6 @@ export function SuperadminAccessDenied({
 }
 
 export function SuperadminDashboard({
-  userEmail,
   overview,
   users,
   windowOptions,
@@ -130,7 +124,7 @@ export function SuperadminDashboard({
   return (
     <main className="alibi-page px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6">
-        <TopNav userEmail={userEmail ?? null} activeHref="/app/superadmin" />
+        <TopNav activeHref="/app/superadmin" />
 
         <header className="px-2 sm:px-4">
           <div className="flex flex-wrap items-baseline justify-between gap-3">

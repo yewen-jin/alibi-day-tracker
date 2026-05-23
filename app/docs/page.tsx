@@ -193,7 +193,7 @@ export default async function DocsPage() {
     <main className="alibi-page relative w-full">
       <div className="mx-auto flex min-h-screen max-w-[1180px] flex-col gap-6 p-6 sm:p-8">
         {user ? (
-          <TopNav userEmail={user.email ?? null} activeHref="/docs" />
+          <TopNav activeHref="/docs" />
         ) : (
           <PublicDocsNav />
         )}
@@ -340,24 +340,26 @@ export default async function DocsPage() {
               </div>
             </section>
 
-            <section className="flex flex-col items-center gap-3 px-2 py-6 text-center">
-              <p className="text-[13px] text-alibi-teal">
-                start with one honest block. messy is useful.
-              </p>
-              <Link
-                href="/demo"
-                className="alibi-button-primary inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px]"
-              >
-                try the demo
-                <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.4} />
-              </Link>
-              <Link
-                href="/auth/sign-up"
-                className="alibi-button-secondary inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px]"
-              >
-                create account
-              </Link>
-            </section>
+            {!user && (
+              <section className="flex flex-col items-center gap-3 px-2 py-6 text-center">
+                <p className="text-[13px] text-alibi-teal">
+                  start with one honest block. messy is useful.
+                </p>
+                <Link
+                  href="/demo"
+                  className="alibi-button-primary inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px]"
+                >
+                  try the demo
+                  <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.4} />
+                </Link>
+                <Link
+                  href="/auth/sign-up"
+                  className="alibi-button-secondary inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px]"
+                >
+                  create account
+                </Link>
+              </section>
+            )}
           </div>
         </div>
 
