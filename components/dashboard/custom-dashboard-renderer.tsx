@@ -57,19 +57,19 @@ export function CustomDashboardRenderer({
 
   return (
     <div className="space-y-5">
-      <section className="alibi-card-pop space-y-4 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <section className="alibi-card-pop space-y-4 p-4 sm:p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight text-alibi-blue">
+              <h2 className="min-w-0 break-words text-xl font-black tracking-tight text-alibi-blue">
                 {view.title}
               </h2>
-              <span className="rounded-full bg-alibi-lavender/20 px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-alibi-blue">
+              <span className="shrink-0 rounded-full bg-alibi-lavender/20 px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-alibi-blue">
                 {view.status}
               </span>
             </div>
             {view.description ? (
-              <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-alibi-teal">
+              <p className="mt-1 max-w-3xl break-words text-sm font-semibold leading-6 text-alibi-teal">
                 {view.description}
               </p>
             ) : null}
@@ -77,7 +77,7 @@ export function CustomDashboardRenderer({
               {formatDate(result?.input_window_start)} to {formatDate(result?.input_window_end)}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:w-auto lg:justify-end">
             <CustomViewEditForm
               title={view.title}
               description={view.description}
@@ -88,7 +88,7 @@ export function CustomDashboardRenderer({
               <form action={publishDashboardViewAction.bind(null, view.id)}>
                 <button
                   type="submit"
-                  className="alibi-button-primary inline-flex h-10 items-center justify-center px-4 text-sm font-black"
+                  className="alibi-button-primary inline-flex h-10 w-full items-center justify-center px-4 text-sm font-black sm:w-auto"
                 >
                   publish
                 </button>
@@ -97,7 +97,7 @@ export function CustomDashboardRenderer({
             <form action={refreshDashboardViewAction.bind(null, view.id)}>
               <button
                 type="submit"
-                className="alibi-button-secondary inline-flex h-10 items-center justify-center px-4 text-sm font-black"
+                className="alibi-button-secondary inline-flex h-10 w-full items-center justify-center px-4 text-sm font-black sm:w-auto"
               >
                 refresh
               </button>
@@ -105,7 +105,7 @@ export function CustomDashboardRenderer({
             <form action={archiveDashboardViewAction.bind(null, view.id)}>
               <button
                 type="submit"
-                className="alibi-button-secondary inline-flex h-10 items-center justify-center px-4 text-sm font-black"
+                className="alibi-button-secondary inline-flex h-10 w-full items-center justify-center px-4 text-sm font-black sm:w-auto"
               >
                 archive
               </button>
@@ -145,15 +145,15 @@ export function CustomDashboardRenderer({
             >
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {sectionResult.metrics.map((metric) => (
-                  <article key={metric.label} className="alibi-block-item">
-                    <p className="text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
+                  <article key={metric.label} className="alibi-block-item min-w-0">
+                    <p className="break-words text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
                       {metric.label}
                     </p>
-                    <p className="mt-2 text-2xl font-black text-alibi-blue">
+                    <p className="mt-2 break-words text-xl font-black text-alibi-blue sm:text-2xl">
                       {metric.value}
                     </p>
                     {metric.detail ? (
-                      <p className="mt-1 text-sm font-semibold text-alibi-teal">
+                      <p className="mt-1 break-words text-sm font-semibold text-alibi-teal">
                         {metric.detail}
                       </p>
                     ) : null}
@@ -174,18 +174,21 @@ export function CustomDashboardRenderer({
             >
               <div className="space-y-3">
                 {sectionResult.points.slice(0, 12).map((point) => (
-                  <div key={point.label} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3">
-                    <span className="truncate text-sm font-black text-alibi-blue">
+                  <div
+                    key={point.label}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 sm:grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)_3rem] sm:items-center"
+                  >
+                    <span className="min-w-0 break-words text-sm font-black text-alibi-blue sm:truncate">
                       {point.label}
                     </span>
-                    <span className="h-3 rounded-full bg-alibi-lavender/20">
+                    <span className="text-right font-mono text-sm font-black text-alibi-pink sm:order-last">
+                      {point.value}
+                    </span>
+                    <span className="col-span-full h-3 rounded-full bg-alibi-lavender/20 sm:col-span-1 sm:col-start-2">
                       <span
                         className="block h-3 rounded-full bg-alibi-teal"
                         style={{ width: `${Math.max((point.value / max) * 100, 4)}%` }}
                       />
-                    </span>
-                    <span className="text-right font-mono text-sm font-black text-alibi-pink">
-                      {point.value}
                     </span>
                   </div>
                 ))}
@@ -203,12 +206,12 @@ export function CustomDashboardRenderer({
             >
               <div className="space-y-3">
                 {sectionResult.panels.map((panel) => (
-                  <article key={panel.title} className="alibi-inset space-y-3 p-4">
-                    <h3 className="text-sm font-black text-alibi-blue">{panel.title}</h3>
+                  <article key={panel.title} className="alibi-inset min-w-0 space-y-3 p-4">
+                    <h3 className="break-words text-sm font-black text-alibi-blue">{panel.title}</h3>
                     {panel.sources.map((source) => (
                       <p
                         key={source.id}
-                        className="border-t border-alibi-lavender/20 pt-3 text-sm font-semibold leading-6 text-alibi-teal first:border-t-0 first:pt-0"
+                        className="break-words border-t border-alibi-lavender/20 pt-3 text-sm font-semibold leading-6 text-alibi-teal first:border-t-0 first:pt-0"
                       >
                         <span className="font-black text-alibi-blue">{source.label}: </span>
                         {source.excerpt}
@@ -234,11 +237,11 @@ export function CustomDashboardRenderer({
           >
             <div className="grid gap-3 md:grid-cols-2">
               {items.map((item) => (
-                <article key={item.title} className="alibi-block-item">
-                  <h3 className="text-[14px] font-black tracking-tight text-alibi-blue">
+                <article key={item.title} className="alibi-block-item min-w-0">
+                  <h3 className="break-words text-[14px] font-black tracking-tight text-alibi-blue">
                     {item.title}
                   </h3>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-alibi-ink">
+                  <p className="mt-2 break-words text-sm font-semibold leading-6 text-alibi-ink">
                     {item.body}
                   </p>
                   {item.evidence.length > 0 ? (
@@ -246,7 +249,7 @@ export function CustomDashboardRenderer({
                       {item.evidence.slice(0, 2).map((source) => (
                         <p
                           key={source.id}
-                          className="text-xs font-semibold leading-5 text-alibi-teal"
+                          className="break-words text-xs font-semibold leading-5 text-alibi-teal"
                         >
                           <span className="font-black text-alibi-blue">
                             {source.label}:{" "}

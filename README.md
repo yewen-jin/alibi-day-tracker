@@ -49,7 +49,7 @@ Chat can:
 
 Chat history is useful context, but block notes are treated as stronger evidence.
 
-Chat can also use push-to-talk voice input and optional spoken companion replies when Cartesia is configured. Raw audio is sent through the server for transcription and is not stored by default.
+Chat can also use push-to-talk voice input and optional spoken companion replies when Cartesia is configured. Pressing the mic starts browser recording; pressing stop finalizes the recording, sends it through server-side Cartesia STT, briefly shows the registered transcript, then submits that text through the normal companion chat path. Recording does not auto-stop on silence yet. Raw audio is sent through the server for transcription and is not stored by default.
 
 ### 4. Notes-first insight engine
 
@@ -134,8 +134,10 @@ Alibi's reusable companion voice prompt lives in [`lib/companion-voice.ts`](./li
 Cartesia routes live under `/api/cartesia/*`:
 
 - `/api/cartesia/token` mints short-lived client access tokens with `stt` and `tts` grants.
-- `/api/cartesia/stt` transcribes push-to-talk browser recordings.
+- `/api/cartesia/stt` transcribes push-to-talk browser recordings, with timeout handling so stalled provider requests return an error instead of leaving the UI stuck.
 - `/api/cartesia/tts` returns generated speech for companion replies.
+
+The shared browser voice capture hook lives in [`lib/use-voice-capture.ts`](./lib/use-voice-capture.ts). It exposes `idle`, `requesting`, `recording`, `transcribing`, `registered`, and `error` states, tracks recording duration and audio level, and cleans up recorder streams, timers, and analyser resources. Recorder stop stability is isolated in [`lib/voice-recorder-stop.ts`](./lib/voice-recorder-stop.ts) and covered by [`tests/unit/voice-recorder-stop.test.ts`](./tests/unit/voice-recorder-stop.test.ts).
 
 ---
 
@@ -464,9 +466,10 @@ Implemented:
 - note-derived insight extraction
 - dashboard notes mirror
 - calendar workspace with month view, selected-day timeline, inline block detail, and shared companion chat hydration
+- voice capture feedback for chat and dashboard dictation: requesting, recording timer/audio level, transcribing, registered/inserted transcript, and error states
 - tracker today calendar shortcut button linking to `/app/calendar`
 - pattern marker dashboard that merges explicit markers and note-derived signals
-- unit test layer: 65 tests across note insights, chat insights, memory context, dashboard data, and block draft utilities
+- unit test layer: 111 tests across note insights, chat insights, memory context, dashboard data, block draft utilities, AI settings, dashboard view generation, and voice recorder stop stability
 
 Pending:
 

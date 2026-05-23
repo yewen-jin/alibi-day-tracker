@@ -78,7 +78,7 @@ export function RhythmChart({ blocks }: RhythmChartProps) {
                 >
                   <div className="relative flex h-full w-full items-end">
                     <div
-                      className="w-full rounded-sm"
+                      className="w-full rounded-t-sm"
                       style={{
                         height: `${Math.max(height, h.count > 0 ? 6 : 0)}%`,
                         background:

@@ -84,7 +84,11 @@ Implemented V4 foundation:
 - Google OAuth creates a separate secondary `alibi` calendar and syncs completed `time_blocks` as events, tracking event id, content hash, status, last error, and sync timestamp;
 - `saveBlock`, `stopTimer`, and `deleteBlock` attempt Google event sync/delete when the user has connected Google Calendar;
 - Cartesia voice routes exist for short-lived token minting, batch STT, and TTS playback;
-- companion chat has push-to-talk recording and optional spoken assistant replies, with no raw audio storage by default.
+- companion chat has push-to-talk recording and optional spoken assistant replies, with no raw audio storage by default;
+- shared voice capture lives in `lib/use-voice-capture.ts`, with visible `requesting`, `recording`, `transcribing`, `registered`, and `error` states, recording duration, and audio activity feedback;
+- chat voice submit remains batch push-to-talk: pressing stop finalizes recording, Cartesia STT returns text, the UI shows the registered transcript briefly, then submits the text through the existing companion message flow. It does not auto-stop on silence yet;
+- dashboard custom-view prompt/update fields reuse the same voice capture model through `components/dashboard/voice-textarea.tsx`, but successful transcription inserts text into the textarea instead of submitting the form;
+- `lib/voice-recorder-stop.ts` isolates the fragile `MediaRecorder.stop()` path with request-data flushing, duplicate-stop guards, and watchdog recovery when `onstop` does not fire.
 
 V4 update — agent layer refresh (2026-05):
 
@@ -347,6 +351,8 @@ Known working principle:
 7. Ask "what patterns do you see today?" and get a note-grounded response.
 8. Open `/app/dashboard` and see evidence-backed notes mirror observations.
 9. Open `/app/calendar`, pick a day, scan the 24-hour timeline, select a block for inline detail, and use chat/edit/delete on the saved block.
+10. In `/app` or `/app/calendar`, press the mic, confirm the requesting/recording feedback, press stop, confirm transcribing and registered transcript feedback, then confirm the transcript appears as a chat message.
+11. In `/app/dashboard`, dictate into the custom dashboard prompt or update field, press stop, and confirm the transcript is inserted without submitting the form.
 
 ## Next Step
 

@@ -24,8 +24,8 @@ export default async function AppPage() {
   ])
 
   return (
-    <main className="alibi-page px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <main className="alibi-page relative w-full">
+      <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col gap-6 p-8">
         <TopNav userEmail={user.email ?? null} activeHref="/app" />
         <TimerTrackerApp
           initialActiveTimer={activeTimer}

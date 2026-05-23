@@ -3,6 +3,7 @@
 import { useOptimistic } from "react"
 import { useFormStatus } from "react-dom"
 import { Loader2, Sparkles } from "lucide-react"
+import { VoiceTextarea } from "@/components/dashboard/voice-textarea"
 
 function SubmitButton({ schemaReady }: { schemaReady: boolean }) {
   const { pending } = useFormStatus()
@@ -11,7 +12,7 @@ function SubmitButton({ schemaReady }: { schemaReady: boolean }) {
     <button
       type="submit"
       disabled={!schemaReady || pending}
-      className="alibi-button-primary inline-flex h-11 items-center justify-center gap-2 self-end px-4 text-sm font-black"
+      className="alibi-button-primary inline-flex h-10 items-center justify-center gap-2 px-4 text-sm font-black"
     >
       {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
       {pending ? "drafting" : "draft view"}
@@ -23,15 +24,17 @@ function PromptTextarea({ schemaReady }: { schemaReady: boolean }) {
   const { pending } = useFormStatus()
 
   return (
-    <textarea
+    <VoiceTextarea
       name="prompt"
       required={schemaReady}
       disabled={!schemaReady || pending}
       minLength={8}
       maxLength={800}
-      rows={3}
-      className="alibi-input min-h-24 py-3 text-sm font-semibold leading-6 disabled:opacity-55"
+      rows={2}
+      className="alibi-input py-3 text-sm font-semibold leading-6 disabled:opacity-55"
       placeholder="show me which kinds of work leave me satisfied, and include evidence from notes"
+      voiceLabel="dictate dashboard prompt"
+      trailingAction={<SubmitButton schemaReady={schemaReady} />}
     />
   )
 }
@@ -55,10 +58,7 @@ export function CustomViewCreateForm({
 
   return (
     <form action={createView} className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-        <PromptTextarea schemaReady={schemaReady} />
-        <SubmitButton schemaReady={schemaReady} />
-      </div>
+      <PromptTextarea schemaReady={schemaReady} />
       {optimisticPrompt ? (
         <div
           aria-live="polite"
