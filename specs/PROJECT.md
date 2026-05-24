@@ -228,7 +228,9 @@ Known working principle:
 - BYOK routing currently covers the main companion message flow. Note insight generation, chat insight extraction, and proactive messages still use hosted defaults and need the same resolver before BYOK is complete across all AI calls.
 - BYOK stores secrets with app-level encryption. Supabase Vault or cloud KMS-backed envelope encryption would be stronger for production.
 - Cartesia voice is batch push-to-talk, not realtime streaming. Token endpoint exists for future direct client streaming, but current UI uses server-side STT/TTS proxies.
+- Demo chat does not yet integrate the shared voice input flow. `/demo` should support push-to-talk transcription like the authenticated app while keeping demo data browser-local.
 - Cartesia voice needs live browser QA for microphone permissions, audio formats, latency, playback, and failure states.
+- Active timer editing is still post-stop only. Once a timer starts, the active timer area should expose an inline content editor where the user can draft/edit task, category, tags, notes, mood/effort/satisfaction, and markers while the timer is running; start/end time remain locked in that active-timer state. Changes should persist only when the user presses save. After the timer is stopped, start/end time become editable through the normal block editor. Editing other completed blocks while a timer is running should continue to use the existing separate block editor UI.
 - Period analysis exists but is still shallow; week/month summaries need deterministic aggregation and stronger evidence trails.
 - Notes mirror and chat mirror are initial vertical slices, not a full longitudinal productivity pattern engine.
 - Chat can analyze saved data, but its elicitation style should become more deliberate: it should ask better questions about feelings, drift, mixed outcomes, and context.
