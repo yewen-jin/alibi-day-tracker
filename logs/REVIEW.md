@@ -1,199 +1,280 @@
 # Review
 
-Date: 2026-05-05
+Date: 2026-05-05  
+Updated: 2026-05-24
 
-This review covers architecture decisions, database schema, project efficiency, bugs, software design, and the `coach` to `companion` naming transition. Product intent was grounded in [PROJECT.md](./PROJECT.md), [SPECS.md](./SPECS.md), and [README.md](./README.md).
+This review tracks architecture decisions, database schema, project efficiency, bugs, software design, and the `coach` to `companion` naming transition. Product intent is grounded in [SPECS.md](../specs/SPECS.md), [PROJECT.md](../specs/PROJECT.md), [STYLES.md](../specs/STYLES.md), and [README.md](../README.md).
 
-## Findings
+## Current Findings
 
-### 1. High: chat logging can fabricate evidence instead of eliciting it
+### 1. High: chat logging still needs semantic duration handling
 
-The chat flow currently auto-builds a time window from duration-only input and auto-infers a category from text, then saves the block without clarification. That conflicts with the product contract that missing time/category must be asked for, not guessed.
+Status: open.
 
-References:
-- [lib/block-draft-utils.ts](./lib/block-draft-utils.ts) — `deriveWindow` (duration-only fallback, lines 92–100)
-- [lib/block-draft-utils.ts](./lib/block-draft-utils.ts) — `resolveCategory` (inferred source path, lines 119–128)
-- [app/actions/process-message.ts](./app/actions/process-message.ts) — category gate (lines 1348–1361)
-- [SPECS.md](./SPECS.md:115)
+The chat flow still auto-builds a completed-block window from duration-only input. The product contract now distinguishes ongoing-work language from completed-work language:
 
-**Status (2026-05-05): open — proposed, not yet implemented.**
+- "i started X 30 minutes ago" and "i've been doing X for 30 minutes" should start an open active timer backdated by 30 minutes.
+- "i did X for 30 minutes", "i spent 30 minutes on X", and "log X for 30 minutes" should clarify when the completed work happened before saving, unless a start or end anchor is present.
 
-Two sub-issues:
-
-**1a. Duration-only window** — `deriveWindow` in `lib/block-draft-utils.ts` builds a `now`-anchored window when only `duration_minutes` is provided, inventing when the work happened. Fix: remove that final branch so a duration-only draft returns `null`. The existing clarification gate at `process-message.ts:1319–1332` already handles a null window by asking "what time was that, or about how long did it take?" — it just never fires because `deriveWindow` currently returns a window instead of null.
-
-**1b. Silent save on inferred category** — `resolveCategory` returns `source: "inferred"` when a category is matched from keywords, but the save gate at `process-message.ts:1348–1361` only asks for clarification when category is `null`. Fix: also clarify when `source === "inferred"`, offering the inferred value as a suggestion:
-
-```ts
-const { category, source } = resolveCategory(mergedDraft)
-if (!category || source === "inferred") {
-  const question = source === "inferred"
-    ? `should i file it under ${category}, or something else?`
-    : clarificationQuestion(mergedDraft)
-  await savePendingDraft(supabase, user.id, conversation.id, mergedDraft)
-  return finishWithAssistant({ type: "clarify", question, draft: mergedDraft }, question, "clarification")
-}
-```
-
-### 2. High: "today" is not timezone-safe in chat analysis
-
-The tracker UI computes the current day in the browser, but server-side chat analysis uses `new Date()` and `setHours()` on the server. Users outside the server timezone can get the wrong block set for prompts like "what did I do today?"
+The current helper cannot represent that distinction because `deriveWindow` turns any duration-only draft into a completed window ending now. Category inference is no longer considered a bug; it is an accepted friction-reduction behavior when the content clearly supports a category.
 
 References:
-- [lib/block-draft-utils.ts](./lib/block-draft-utils.ts) — `getDayRange` (lines 130–141)
-- [app/actions/process-message.ts](./app/actions/process-message.ts) — `companionChat` calls `getDayRange()` with no timezone
-- [app/actions/process-message.ts](./app/actions/process-message.ts) — `analyseBlocks` calls `getAnalysisRange` which falls back to `getDayRange()`
+- [lib/block-draft-utils.ts](../lib/block-draft-utils.ts) — `deriveWindow` builds a now-anchored duration-only window at lines 107-115.
+- [app/actions/process-message.ts](../app/actions/process-message.ts) — `deriveWindow(mergedDraft)` is accepted as saveable at line 1779.
+- [specs/SPECS.md](../specs/SPECS.md) — companion behavior now defines ongoing-duration vs completed-duration semantics in the Companion section.
 
-**Status (2026-05-05): open — proposed, not yet implemented.**
+Remaining work:
+- Add intent/semantic handling before save: ongoing duration should call a start-timer path with a backdated `started_at`; completed duration should clarify when it happened.
+- Remove or narrow the duration-only fallback branch from completed-block `deriveWindow` so it cannot silently save "did X for 30 minutes" as the last 30 minutes.
+- Keep category inference for clear content, but avoid inferring when the evidence is absent or ambiguous.
+- Update tests that currently codify the bad behavior, especially `tests/unit/block-draft-utils.test.ts`.
 
-`getDayRange` was extracted to `lib/block-draft-utils.ts` (previously inline in `process-message.ts`) but its implementation is unchanged. The `timezone` string already arrives in `processCompanionMessage` via `input.timezone` and is passed to the LLM router, but not forwarded to `getDayRange`.
+### 2. High: "today" and memory ranges are still not timezone-safe
 
-Fix: add a `timezone?: string | null` parameter to `getDayRange` and compute midnight using the user's elapsed local time rather than `setHours(0,0,0,0)` on the server. Thread `timezone` from `processCompanionMessage` through `companionChat` and `analyseBlocks` (both call `getDayRange`). Use `date-fns-tz` (`date-fns` is already a dependency) for `startOfDay`/`endOfDay` rather than a manual elapsed-time calculation.
+Status: open.
 
-### 3. Medium: the documented primary schema does not fully reproduce the repo's data access surface
-
-The docs point fresh setups at `supabase-v2.sql`, but legacy code still queries `entries` and `proactive_messages`, and those tables are not created anywhere under `db/`. On a fresh environment, those paths fail.
-
-References:
-- [README.md](./README.md:115)
-- [app/actions/get-entries.ts](./app/actions/get-entries.ts:18)
-- [app/actions/proactive-messages.ts](./app/actions/proactive-messages.ts:15)
-- [app/actions/generate-insight.ts](./app/actions/generate-insight.ts:48)
-
-### 4. Medium: chat history loading is unbounded and will get slower with usage
-
-`fetchCoachMessagesForUser` reads the full transcript every time, then callers slice it locally or filter it in memory. That affects normal chat, analysis, and initial hydration.
+Server-side helpers still derive day boundaries from the server process timezone. `processCompanionMessage` accepts a user timezone and passes it to the router prompt, but the memory range helpers do not consume it.
 
 References:
-- [app/actions/process-message.ts](./app/actions/process-message.ts:547)
-- [app/actions/process-message.ts](./app/actions/process-message.ts:642)
-- [app/actions/process-message.ts](./app/actions/process-message.ts:675)
-- [app/actions/process-message.ts](./app/actions/process-message.ts:976)
+- [lib/block-draft-utils.ts](../lib/block-draft-utils.ts) — `getDayRange` uses `new Date()` and `setHours(0, 0, 0, 0)` at lines 145-155.
+- [lib/memory-context.ts](../lib/memory-context.ts) — `startOfLocalDay` uses server-local `setHours` at lines 60-63.
+- [lib/memory-context.ts](../lib/memory-context.ts) — `inferMemoryRange` computes today/yesterday/week/month from that server-local start at lines 103-157.
+- [README.md](../README.md) still lists timezone-safe `getDayRange` as pending.
 
-### 5. Medium: the schema stores category twice without a database invariant
+Remaining work:
+- Thread the user's IANA timezone into `inferMemoryRange`, `buildCompanionMemoryContext`, and RAG retrieval scope derivation.
+- Compute local-day boundaries for the user's timezone, including DST-safe ranges.
+- Update unit tests so they assert user-zone behavior rather than server-local behavior.
 
-`time_blocks.category` and `time_blocks.category_id` can drift from each other. Application code writes both, but Postgres does not enforce that the slug matches the referenced category row. That is a long-term data integrity risk.
+### 3. Medium: companion history loading is still unbounded
 
-References:
-- [db/supabase-v2.sql](./db/supabase-v2.sql:18)
-- [db/supabase-v2.sql](./db/supabase-v2.sql:74)
-- [app/actions/timer.ts](./app/actions/timer.ts:936)
-- [app/actions/timer.ts](./app/actions/timer.ts:1057)
+Status: open.
 
-### 6. Medium: the rhythm view under-represents when time was actually spent
-
-The dashboard aggregates only the start hour of each block, but the UI presents it as "by hour" / "when you track". Long blocks crossing multiple hours are undercounted.
+The prompt path slices recent messages after load, but the underlying conversation query still fetches every message for the thread and returns that full array to the UI.
 
 References:
-- [lib/dashboard-data.ts](./lib/dashboard-data.ts:109)
-- [components/dashboard/rhythm-chart.tsx](./components/dashboard/rhythm-chart.tsx:65)
+- [app/actions/process-message.ts](../app/actions/process-message.ts) — `fetchCompanionMessagesForConversation` selects all rows and orders ascending with no `.limit()` at lines 540-550.
+- [app/actions/process-message.ts](../app/actions/process-message.ts) — prompt usage slices to the last six after the full load.
 
-### 7. Low: static verification is weaker than it looks
+Remaining work:
+- Add a bounded latest-message query for thread hydration.
+- Add pagination or an older-message loader for long histories.
+- Keep prompt construction bounded at the query layer, not only after fetch.
 
-`npm run build` passes, but `npm run lint` is broken because the script still calls `next lint` on Next 16. There is also no repo test suite outside dependency artifacts.
+### 4. Medium: category is still stored twice without a database invariant
+
+Status: open.
+
+`time_blocks.category` and `time_blocks.category_id` can still drift. Application code writes both, but the database does not enforce that the stored slug matches the referenced category row.
 
 References:
-- [package.json](./package.json:9)
+- [db/migrations/001_initial_app_schema.sql](../db/migrations/001_initial_app_schema.sql) — `time_blocks.category` and `time_blocks.category_id` are separate columns at lines 75-76.
+- [db/supabase-v2.sql](../db/supabase-v2.sql) — legacy Supabase schema also stores both.
+- [app/actions/timer.ts](../app/actions/timer.ts) — timer/manual save paths write both fields.
 
-**Status (2026-05-05):** Unit test layer implemented (see Testing Method section). The broken `next lint` script is still unresolved.
+Remaining work:
+- Choose a single source of truth, preferably `category_id` plus a join for current metadata.
+- If denormalized slug must remain for compatibility, add a trigger/check strategy or migration plan that prevents drift.
+
+### 5. Medium: the rhythm view still under-represents when time was actually spent
+
+Status: open.
+
+The dashboard aggregates only the start hour of each block. A multi-hour block increments one bucket, but the UI labels the chart as "by hour" / "when you track", which implies a distribution of time spent.
+
+References:
+- [lib/dashboard-data.ts](../lib/dashboard-data.ts) — `aggregateByHour` increments only `new Date(block.started_at).getHours()` at lines 217-225.
+- [components/dashboard/rhythm-chart.tsx](../components/dashboard/rhythm-chart.tsx) — the UI labels this as "by hour" at lines 65-89.
+- [tests/unit/dashboard-data.test.ts](../tests/unit/dashboard-data.test.ts) — tests assert start-hour counting rather than duration-spread behavior.
+
+Remaining work:
+- Decide whether the chart means "blocks started by hour" or "minutes spent by hour".
+- If it means time spent, split block duration across occupied hour buckets.
+- If it means starts, rename the UI and types to avoid overstating the signal.
+
+### 6. Medium: RAG migration conflicts with the portable schema direction
+
+Status: open.
+
+The portable migration path references `app_users` and avoids Supabase-only ownership assumptions. The RAG migration reintroduces `auth.users` foreign keys and Supabase RLS, which makes the migration Supabase-specific.
+
+References:
+- [db/migrations/001_initial_app_schema.sql](../db/migrations/001_initial_app_schema.sql) — portable schema uses `app_users`.
+- [db/migrations/012_memory_chunks_rag.sql](../db/migrations/012_memory_chunks_rag.sql) — `memory_chunks.user_id` and `rag_retrieval_logs.user_id` reference `auth.users`; RLS policies use `auth.uid()`.
+
+Remaining work:
+- Mark migration 012 as Supabase-only and add a portable equivalent, or convert it to `app_users(id)` and repository-enforced ownership.
+
+### 7. Medium: RAG fallback can ignore the requested scope
+
+Status: open.
+
+Vector retrieval applies source/date filters, but the fallback query returns the user's most recent completed blocks without applying the requested date range or source type constraints.
+
+References:
+- [lib/rag/retriever.ts](../lib/rag/retriever.ts) — `fallbackRecentBlocks` queries recent `time_blocks` only.
+- [lib/rag/retriever.ts](../lib/rag/retriever.ts) — fallback is used when no chunks are returned.
+- [db/migrations/012_memory_chunks_rag.sql](../db/migrations/012_memory_chunks_rag.sql) — `match_memory_chunks` itself supports date/source filters.
+
+Remaining work:
+- Pass the resolved date window and source types into fallback retrieval.
+- Prefer no RAG fallback over out-of-scope evidence when a user asks about a specific period/source.
+
+### 8. Medium: existing block edits do not invalidate the memory-context cache
+
+Status: open.
+
+The memory-context cache is invalidated on new block inserts and deletes, but the existing-block update branch returns without invalidating. Non-today analysis can stay stale for up to the cache TTL.
+
+References:
+- [lib/memory-context.ts](../lib/memory-context.ts) — non-today contexts are cached for five minutes.
+- [app/actions/timer.ts](../app/actions/timer.ts) — insert/delete paths invalidate, but the update path revalidates UI paths and returns without `invalidateMemoryContextForUser`.
+
+Remaining work:
+- Call `invalidateMemoryContextForUser(user.id)` in the existing-block update branch of `saveBlock`.
+
+### 9. Medium: some model paths still bypass BYOK resolution
+
+Status: open.
+
+Primary companion chat resolves per-user AI settings, but note insight extraction and the legacy proactive insight writer still use hosted model imports directly.
+
+References:
+- [app/actions/process-message.ts](../app/actions/process-message.ts) — main companion flow resolves user AI settings.
+- [lib/ai-note-insights.ts](../lib/ai-note-insights.ts) — note insight extraction imports hosted `fastModel`.
+- [app/actions/generate-insight.ts](../app/actions/generate-insight.ts) — legacy proactive writer imports hosted `companionModel`.
+
+Remaining work:
+- Route these paths through `resolveAiModelsForUser`, or explicitly document them as server-owned hosted processing until migrated.
+- If `generate-insight.ts` is legacy-only, mark it clearly and avoid invoking it from new flows.
+
+### 10. Medium: embeddings require server-owned OpenAI credentials but setup docs do not clearly say so
+
+Status: open.
+
+RAG embeddings currently require `OPENAI_API_KEY`, independent of BYOK provider settings.
+
+References:
+- [lib/rag/embedding.ts](../lib/rag/embedding.ts) — only `openai` is supported and `OPENAI_API_KEY` is required.
+- [README.md](../README.md) — BYOK/model settings are documented, but server-owned embedding credentials are not called out clearly enough.
+
+Remaining work:
+- Document `OPENAI_API_KEY`, `ALIBI_EMBEDDING_MODEL`, `ALIBI_EMBEDDING_DIMENSIONS`, and `ALIBI_EMBEDDING_BATCH_SIZE`.
+- Separate server-owned embeddings from user BYOK in setup docs and privacy/configuration language.
+
+### 11. Low: static verification is still weaker than it looks
+
+Status: partially improved, lint still open.
+
+The unit test layer is now meaningful, but `pnpm lint` still calls `next lint`, which is incompatible with the installed Next.js version and should not be treated as a passing gate.
+
+References:
+- [package.json](../package.json) — `"lint": "next lint"`.
+- [README.md](../README.md) — documents that lint is broken.
+
+Remaining work:
+- Replace `next lint` with a supported ESLint setup or remove the lint script until it is real.
+
+## Resolved Or Superseded Findings
+
+### Fresh schema now includes legacy `entries` and `proactive_messages`
+
+Status: resolved for the portable migration path.
+
+The 2026-05-05 review said the documented primary schema did not reproduce code paths that query `entries` and `proactive_messages`. The portable migration now creates both tables.
+
+References:
+- [db/migrations/001_initial_app_schema.sql](../db/migrations/001_initial_app_schema.sql) — `entries` table at lines 16-40.
+- [db/migrations/001_initial_app_schema.sql](../db/migrations/001_initial_app_schema.sql) — `proactive_messages` table at lines 42-50.
+
+Remaining caveat:
+- `entries` and proactive messages remain legacy/reference paths for the current app. New chat logging writes to `time_blocks`.
+
+### Unit test absence is resolved
+
+Status: resolved, with integration/E2E gaps remaining.
+
+The old review found no repo-local tests. The current repo has a Vitest unit suite covering notes, chat insights, memory context, dashboard data, block draft utilities, secret crypto, AI settings, RAG chunking, model defaults, dashboard views, and voice recorder stop handling.
+
+Current verification:
+- `pnpm test:unit` passed on 2026-05-24: 14 files, 116 tests.
+
+Remaining gaps:
+- Integration tests for [app/actions/timer.ts](../app/actions/timer.ts) and [app/actions/process-message.ts](../app/actions/process-message.ts) are still not implemented.
+- [tests/e2e/demo.test.ts](../tests/e2e/demo.test.ts) exists, but E2E coverage is still a small `/demo` skeleton.
+
+### `coach` to `companion` rename remains acceptable
+
+Status: acceptable.
+
+Active product/runtime naming is mostly `companion`. Remaining `coach_*` references are migration compatibility artifacts and should be retained unless a deliberate migration cleanup is planned.
 
 ## Architecture Summary
 
-The core V3 direction is coherent:
-- one primary timeline table for saved work;
-- note versioning that preserves user-authored history;
-- derived note insight rows that are replaceable rather than authoritative;
-- Supabase RLS and server actions as the main application boundary.
+The core direction is still coherent:
+- `time_blocks` are the primary timeline container.
+- Notes and note versions preserve human-authored evidence.
+- Derived insight rows are replaceable interpretations, not authoritative records.
+- Companion chat now has general and block-specific threads.
+- BYOK, calendar sync, dashboard views, RAG chunking, and voice capture have expanded the system surface.
 
-The main design problems are contract drift in chat logging, timezone correctness, leftover legacy surfaces that still shape the schema story, and a lack of bounded history access in companion chat.
+The main unresolved risks are evidence-contract drift in chat logging, timezone correctness, unbounded companion history loading, denormalized category integrity, incomplete integration/E2E coverage, and several portability/BYOK gaps introduced by newer RAG/model-routing work.
 
 ## Verification
 
-What I verified:
-- `npm run build` passes.
-- `npm run lint` fails because the current script is incompatible with the installed Next.js version.
-- No repo-local tests were found.
-
-**Updated (2026-05-05):** `npm run test` passes — 37 unit tests (Vitest). `npm run lint` still broken. Integration and full E2E layers not yet implemented.
+Most recent verification recorded in this review cycle:
+- `pnpm test:unit` passed on 2026-05-24: 14 files, 116 tests.
+- `pnpm build` passed on 2026-05-24.
+- Build emitted the existing Next.js multiple-lockfile workspace-root warning.
+- `pnpm lint` remains broken and should not be treated as a gate.
 
 ## Testing Method
 
-A three-layer approach matched to the current architecture and risk.
+### Layer 1: Unit tests for pure logic — active
 
-### Layer 1: Unit tests for pure logic — done
+Current unit tests cover:
+- note insight derivation;
+- chat insight derivation;
+- memory range/context formatting;
+- dashboard data helpers;
+- dashboard view spec/agent behavior;
+- block draft utilities;
+- time block display helpers;
+- AI settings and model defaults;
+- RAG chunking;
+- secret encryption;
+- voice recorder stop stability.
 
-Pure logic that does not need React or Supabase, covered by Vitest:
+Important caveat: some tests still codify known-bad behavior, especially duration-only completed-block now-anchoring and server-local day boundaries.
 
-| File | Tests | Status |
-|---|---|---|
-| `lib/note-insights.ts` | 12 | passing |
-| `lib/dashboard-data.ts` | 9 | passing |
-| `lib/block-draft-utils.ts` | 16 | passing |
+### Layer 2: Integration tests for server actions — still missing
 
-The `block-draft-utils.ts` module was extracted from `process-message.ts` specifically to make `deriveWindow`, `resolveCategory`, `inferCategoryFromText`, and `getDayRange` importable by tests without crossing the `"use server"` boundary.
-
-Coverage includes: note-derived marker extraction, duration/rhythm aggregation, category inference, time-window derivation (including all four `deriveWindow` branches), `getDayRange` midnight/span correctness with fake timers, and `resolveCategory` extracted/inferred/none paths.
-
-### Layer 2: Integration tests for server actions — not yet implemented
-
-The highest-risk code lives in:
+Highest-priority integration targets:
 - `app/actions/timer.ts`
 - `app/actions/process-message.ts`
 
-These should be tested with Supabase mocked at the query boundary and AI calls stubbed. Priority behavioral contracts:
-- timer start/stop/resume flows;
+Priority behaviors:
+- timer start/stop/resume;
 - save/edit/delete block rules;
-- note-version and insight regeneration behavior;
-- chat clarification vs. auto-save decisions (ties directly to Findings 1a and 1b);
-- timezone-sensitive "today" range handling (ties directly to Finding 2).
+- note-version and insight regeneration;
+- memory cache invalidation on block edits;
+- chat clarification vs. auto-save decisions, including ongoing-duration open timers vs completed-duration clarification;
+- timezone-sensitive "today" range handling;
+- BYOK model resolution on all model-using paths.
 
 ### Layer 3: End-to-end browser tests — skeleton only
 
-Playwright is installed and configured. `tests/e2e/demo.test.ts` has a skeleton for:
-- `/demo` page load and start-button visibility;
-- start → stop timer flow;
-- manual log form open.
+Playwright exists and [tests/e2e/demo.test.ts](../tests/e2e/demo.test.ts) checks basic `/demo` loading, start/stop visibility, and opening the manual log form.
 
-Selectors are unconfirmed against the live UI. Remaining flows to cover:
-- `/demo`: edit/delete, resume, local persistence;
-- `/app`: authenticated timer flow, block save/edit, chat logging, dashboard visibility;
-- companion thread open/reopen.
-
-### Coverage priority
-
-Do not chase blanket coverage first. Cover the surfaces that can silently corrupt evidence:
-- time-window derivation;
-- category resolution;
-- note history preservation;
-- insight refresh on edit;
-- companion logging/clarification behavior;
-- dashboard aggregation correctness.
-
-## Naming Review: `coach` to `companion`
-
-Status:
-- Active product copy and current runtime naming are mostly switched to `companion`.
-- Remaining database references to legacy `coach_*` tables are intentional and should be treated as compatibility artifacts, not inconsistencies.
-- GitHub repo name and setup documentation now use `alibi-day-tracker`.
-
-### Consistent now
-
-- Product/docs language has largely moved to `companion`: [SPECS.md](./SPECS.md:94), [PROJECT.md](./PROJECT.md:88), [README.md](./README.md:107)
-- Runtime chat code uses `companion_*`: [app/actions/process-message.ts](./app/actions/process-message.ts:547), [app/actions/process-message.ts](./app/actions/process-message.ts:715), [db/supabase-v2.sql](./db/supabase-v2.sql:134)
-- Main app and demo input labels/IDs use `companion`: [components/timer-tracker-app.tsx](./components/timer-tracker-app.tsx:1084), [app/demo/page.tsx](./app/demo/page.tsx:897)
-- Voice and prompt naming is aligned: [README.md](./README.md:109), [app/actions/process-message.ts](./app/actions/process-message.ts:10), [app/actions/generate-insight.ts](./app/actions/generate-insight.ts:17)
-
-### Intentionally retained
-
-- Legacy migration and backfill references to `coach_*` tables: [db/supabase-coach-message-model.sql](./db/supabase-coach-message-model.sql:1), [db/supabase-chat-history.sql](./db/supabase-chat-history.sql:98), [SPECS.md](./SPECS.md:162), [PROJECT.md](./PROJECT.md:72)
-- Local workspace paths in this historical review may still show the old checkout directory name, but setup docs point to the renamed GitHub repo.
-
-Conclusion:
-- The rename is complete enough for the live app surface.
-- Remaining `coach` references are acceptable under the current stated rule: keep legacy database references for migration compatibility.
+Remaining E2E coverage:
+- `/demo` edit/delete, resume, local persistence, chat-created block, clear/import flows;
+- authenticated `/app` timer/manual/chat logging flows;
+- calendar/dashboard visibility;
+- companion thread open/reopen behavior.
 
 ## Assumptions
 
-- `/app` and `/app/dashboard` are the real V3 surfaces.
-- `entries` and `proactive_messages` are legacy paths unless intentionally revived.
+- `/app`, `/app/calendar`, and `/app/dashboard` are the real authenticated product surfaces.
+- `/demo` is a localStorage-backed demo path and can have separate constraints, but it should not contradict core evidence rules.
+- `entries` and `proactive_messages` are legacy/reference paths unless intentionally revived.
 - Legacy `coach_*` database references are intentionally preserved during migration.

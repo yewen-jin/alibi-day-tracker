@@ -210,6 +210,7 @@ Known working principle:
 - Chat insight rows are derived from user messages only and keep narrative patterns separate from time-block evidence.
 - General companion chat and analysis now retrieve SQL-backed memory context from the shared user data model. Default scope is today; user language can expand retrieval to yesterday, the last few days, week, or month; a complete draft uses its explicit time window.
 - Companion clarification now accepts duration values returned by the model as either numbers or numeric strings, and partial time answers produce specific follow-up questions instead of repeating the same generic time/duration prompt.
+- Companion time parsing should distinguish open-timer semantics from completed-block semantics: "i started this 30 minutes ago" or "i've been doing this for 30 minutes" should start an active timer backdated by 30 minutes, while "i did this for 30 minutes" should clarify when the completed work happened before saving.
 - Pending companion drafts no longer hijack every later message. If a new message is ordinary chat instead of a logging answer, the stale draft is resolved and the companion returns to conversation.
 - Block-specific companion threads are reflective only and use compact block context instead of broad retrieval.
 - Public demo data stays in browser `localStorage` until the user imports completed blocks into an authenticated account.
@@ -230,8 +231,8 @@ Known working principle:
 - Period analysis exists but is still shallow; week/month summaries need deterministic aggregation and stronger evidence trails.
 - Notes mirror and chat mirror are initial vertical slices, not a full longitudinal productivity pattern engine.
 - Chat can analyze saved data, but its elicitation style should become more deliberate: it should ask better questions about feelings, drift, mixed outcomes, and context.
-- `deriveWindow` still builds a now-anchored window from duration-only input, fabricating when work happened (see REVIEW.md Finding 1a). Removing that branch would enforce the product contract that time must be asked for, not guessed.
-- `resolveCategory` with `source: "inferred"` saves silently without asking the user to confirm (see REVIEW.md Finding 1b).
+- `deriveWindow` still builds a now-anchored completed-block window from duration-only input. This is wrong for completed-work language such as "i did X for 30 minutes", which should clarify when it happened. However, duration-only ongoing-work language such as "i've been doing X for 30 minutes" should start an open timer backdated by the duration instead of saving a completed block.
+- Category inference is allowed and desirable for low-friction logging. The remaining requirement is not confirmation for every inferred category; it is avoiding misleading structure when category evidence is absent or ambiguous, and keeping inferred categories user-editable after save.
 - `getDayRange` is not timezone-safe: server-side "today" uses server local time instead of the user's IANA timezone (see REVIEW.md Finding 2).
 - Project-level tracking and break overlays are still roadmap-only. The current plan is documented in [FUTURE-ROADMAP-projects-breaks.md](./FUTURE-ROADMAP-projects-breaks.md).
 - Integration tests for `app/actions/timer.ts` and `app/actions/process-message.ts` are not yet written.
@@ -347,12 +348,13 @@ Known working principle:
 3. Stop it and add a nuanced note about what actually happened.
 4. Edit the note later; the prior version is preserved and insight rows refresh.
 5. Add a manual block with a new custom category.
-6. Ask chat to log a completed block; it asks for missing time/task/category before saving.
-7. Ask "what patterns do you see today?" and get a note-grounded response.
-8. Open `/app/dashboard` and see evidence-backed notes mirror observations.
-9. Open `/app/calendar`, pick a day, scan the 24-hour timeline, select a block for inline detail, and use chat/edit/delete on the saved block.
-10. In `/app` or `/app/calendar`, press the mic, confirm the requesting/recording feedback, press stop, confirm transcribing and registered transcript feedback, then confirm the transcript appears as a chat message.
-11. In `/app/dashboard`, dictate into the custom dashboard prompt or update field, press stop, and confirm the transcript is inserted without submitting the form.
+6. Ask chat to log a completed block; it asks for missing task/time before saving when completed-work timing is incomplete.
+7. Ask chat "i've been doing email for 30 minutes"; it starts an open timer backdated by 30 minutes and infers the category when the content is clear.
+8. Ask "what patterns do you see today?" and get a note-grounded response.
+9. Open `/app/dashboard` and see evidence-backed notes mirror observations.
+10. Open `/app/calendar`, pick a day, scan the 24-hour timeline, select a block for inline detail, and use chat/edit/delete on the saved block.
+11. In `/app` or `/app/calendar`, press the mic, confirm the requesting/recording feedback, press stop, confirm transcribing and registered transcript feedback, then confirm the transcript appears as a chat message.
+12. In `/app/dashboard`, dictate into the custom dashboard prompt or update field, press stop, and confirm the transcript is inserted without submitting the form.
 
 ## Next Step
 

@@ -102,6 +102,7 @@ The general companion thread can:
 
 - respond conversationally without forcing a log;
 - start or stop the active timer;
+- start the active timer from a user-supplied past start, such as "i started this 30 minutes ago" or "i've been doing this for 30 minutes";
 - create completed time blocks from clear natural-language logging intent;
 - ask follow-up questions when task, time, or category is missing;
 - help the user elaborate notes and emotional context;
@@ -117,7 +118,13 @@ Required behavior for block-specific companion threads:
 - discuss, summarize, reframe, and help the user reinterpret the block;
 - avoid editing the block, creating new blocks, or operating timers in v1.
 
-The agent must not guess missing time windows or silently invent categories when the user is uncertain. If information is necessary to write a valid block in the general thread, it asks. This applies to both time and category: a duration-only input is not enough to save a block, and a category inferred from keyword matching must be confirmed with the user before saving.
+The agent should use semantic intent, not a flat duration parser:
+
+- "i started X 30 minutes ago" and "i've been doing X for 30 minutes" mean the user is still doing it. The agent may start an open timer with `started_at` backdated by 30 minutes and leave `ended_at` unset.
+- "i did X for 30 minutes", "i spent 30 minutes on X", and "log X for 30 minutes" describe completed work. If the user gives only duration and no start or end anchor, the agent should clarify when it happened before saving a completed time block.
+- "i worked on X from 2 to 2:30" or "i finished X at 3 after 30 minutes" gives enough timing information to save a completed block.
+
+The agent may infer category from the content of the input to reduce logging friction. Inferred categories are acceptable as long as they remain user-editable after save and the agent does not claim the user explicitly chose a category they did not provide. The agent should ask only when the category is missing or ambiguous enough that saving would create misleading structure.
 
 ### Voice Chat
 
