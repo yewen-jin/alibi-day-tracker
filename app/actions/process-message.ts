@@ -45,6 +45,7 @@ import type {
   Mood,
   Satisfaction,
   SaveBlockInput,
+  StartTimerInput,
   TimeBlock,
   TimeBlockCategory,
 } from "@/lib/types";
@@ -326,6 +327,61 @@ function draftToSaveInput(
     category,
     started_at: window.startedAt,
     ended_at: window.endedAt,
+    hashtags: draft.hashtags,
+    notes: draft.notes,
+    mood: draft.mood,
+    effort_level: draft.effort_level,
+    satisfaction: draft.satisfaction,
+    avoidance_marker: draft.avoidance_marker,
+    hyperfocus_marker: draft.hyperfocus_marker,
+    guilt_marker: draft.guilt_marker,
+    novelty_marker: draft.novelty_marker,
+  };
+}
+
+function timerStartFromDraft(draft: CompanionDraft) {
+  if (draft.started_at && !draft.ended_at) {
+    return draft.started_at;
+  }
+
+  if (
+    draft.duration_minutes &&
+    !draft.started_at &&
+    !draft.ended_at
+  ) {
+    return new Date(Date.now() - draft.duration_minutes * 60_000).toISOString();
+  }
+
+  return null;
+}
+
+function draftToStartTimerInput(
+  draft: CompanionDraft,
+): StartTimerInput | undefined {
+  const startedAt = timerStartFromDraft(draft);
+  const category = resolveCategory(draft).category;
+
+  if (
+    !startedAt &&
+    !draft.task_name?.trim() &&
+    !category &&
+    draft.hashtags.length === 0 &&
+    !draft.notes?.trim() &&
+    !draft.mood &&
+    !draft.effort_level &&
+    !draft.satisfaction &&
+    !draft.avoidance_marker &&
+    !draft.hyperfocus_marker &&
+    !draft.guilt_marker &&
+    !draft.novelty_marker
+  ) {
+    return undefined;
+  }
+
+  return {
+    started_at: startedAt,
+    task_name: draft.task_name,
+    category,
     hashtags: draft.hashtags,
     notes: draft.notes,
     mood: draft.mood,
@@ -919,7 +975,8 @@ async function routeMessage(
         "Valid intents: companion_chat, log_block, start_timer, stop_timer, analyse_blocks, clarify.",
         "Use companion_chat for ordinary conversation, emotional check-ins, uncertainty, venting, or anything that is not clearly a request to save completed work.",
         "Use log_block when the user is trying to record, add, save, or log completed work, even if details are missing.",
-        "Use start_timer or stop_timer for explicit timer control.",
+        "Use start_timer when they explicitly start a timer, or when ongoing language means the work is still in progress: 'i started X 30 minutes ago', 'i've been doing X for 30 minutes'.",
+        "Use stop_timer for explicit timer stop/control.",
         "Use analyse_blocks when they ask what they did, how long they spent, patterns, or reassurance from saved records.",
         "Use clarify only when the new message answers a prior clarification but is still incomplete.",
         "",
@@ -949,7 +1006,10 @@ async function routeMessage(
         "- Return started_at and ended_at as complete ISO datetimes, never partial clock strings.",
         "- If the user says a range like '2 to 3:30', return both started_at and ended_at.",
         "- If they give a duration only, return duration_minutes.",
-        "- Do not invent a time window.",
+        "- If the user semantically says they are still doing the activity, use intent=start_timer with duration_minutes and no ended_at.",
+        "- If the user semantically says they completed or are logging finished work, use intent=log_block with duration_minutes and no invented started_at/ended_at; the server will save it as ending now.",
+        "- Apply intent semantics across languages; examples are illustrative, not English trigger phrases.",
+        "- Do not invent explicit timestamps.",
         "- Prefer concise task names without filler words like 'worked on'.",
         "- Use an existing/default category when obvious: deep_work, admin, social, errands, care, creative, rest.",
         "- If the user gives a custom category name, return that name.",
@@ -1652,8 +1712,10 @@ export async function processCompanionMessage(
     clarificationDraft,
   );
 
-  if (routed.intent === "start_timer") {
-    const result = await startTimer();
+  if (
+    routed.intent === "start_timer"
+  ) {
+    const result = await startTimer(draftToStartTimerInput(mergedDraft));
     if (result.type === "started") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
       const ack = await makeAck(models, "started", mergedDraft.task_name ?? "timer");

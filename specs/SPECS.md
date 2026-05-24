@@ -120,8 +120,9 @@ Required behavior for block-specific companion threads:
 
 The agent should use semantic intent, not a flat duration parser:
 
-- "i started X 30 minutes ago" and "i've been doing X for 30 minutes" mean the user is still doing it. The agent may start an open timer with `started_at` backdated by 30 minutes and leave `ended_at` unset.
-- "i did X for 30 minutes", "i spent 30 minutes on X", and "log X for 30 minutes" describe completed work. If the user gives only duration and no start or end anchor, the agent should clarify when it happened before saving a completed time block.
+- Ongoing-work intent with a duration, such as "i started X 30 minutes ago" or "i've been doing X for 30 minutes", means the user is still doing it. The agent may start an open timer with `started_at` backdated by the duration and leave `ended_at` unset.
+- Completed-work logging intent with a duration and no explicit start or end anchor means the work ended now. The agent should save a completed block covering the duration immediately before now.
+- This rule is semantic and language-independent. It should rely on model-deciphered intent and extracted duration, not hard-coded English trigger phrases.
 - "i worked on X from 2 to 2:30" or "i finished X at 3 after 30 minutes" gives enough timing information to save a completed block.
 
 The agent may infer category from the content of the input to reduce logging friction. Inferred categories are acceptable as long as they remain user-editable after save and the agent does not claim the user explicitly chose a category they did not provide. The agent should ask only when the category is missing or ambiguous enough that saving would create misleading structure.

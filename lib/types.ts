@@ -334,6 +334,22 @@ export interface StopTimerInput {
   note_source?: NoteVersionSource
 }
 
+export interface StartTimerInput {
+  started_at?: string | null
+  task_name?: string | null
+  category?: TimeBlockCategory | null
+  category_id?: string | null
+  hashtags?: string[]
+  notes?: string | null
+  mood?: Mood | null
+  effort_level?: EffortLevel | null
+  satisfaction?: Satisfaction | null
+  avoidance_marker?: boolean
+  hyperfocus_marker?: boolean
+  guilt_marker?: boolean
+  novelty_marker?: boolean
+}
+
 export interface DeleteBlockInput {
   id: string
 }

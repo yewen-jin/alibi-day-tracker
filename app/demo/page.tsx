@@ -744,7 +744,8 @@ export default function DemoPage() {
         setPendingDraft(result.pendingDraft)
 
         if (result.operation?.type === "start_timer" && !activeTimer) {
-          setActiveTimer({ user_id: "demo", started_at: new Date().toISOString(), created_at: new Date().toISOString() })
+          const startedAt = result.operation.started_at ?? new Date().toISOString()
+          setActiveTimer({ user_id: "demo", started_at: startedAt, created_at: startedAt })
           setNow(Date.now())
         }
 

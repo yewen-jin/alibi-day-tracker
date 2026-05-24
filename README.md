@@ -461,6 +461,7 @@ Implemented:
 - start, stop, resume, save, edit, delete block flows
 - manual/backdated block creation
 - chat start/stop/log/clarification/check-in flows
+- semantic chat time parsing: ongoing duration starts an open backdated timer, while completed-work duration without an explicit start/end logs the immediately preceding duration as a completed block ending now
 - notes-first analysis retrieval for companion responses
 - note version preservation
 - note-derived insight extraction
@@ -481,7 +482,6 @@ Pending:
 - Playwright E2E selectors confirmed against live UI; authenticated app flows not yet covered
 - fix `pnpm lint` (`next lint` incompatible with Next 16)
 - timezone-safe `getDayRange` (server uses server local time instead of user IANA timezone)
-- semantic chat time parsing: ongoing duration starts an open backdated timer, completed duration clarifies when it happened
 
 ---
 

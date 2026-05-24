@@ -82,7 +82,7 @@ type DemoModels = ReturnType<typeof resolveDemoModels>
 type ModelRole = "fast" | "companion"
 
 export type DemoCompanionOperation =
-  | { type: "start_timer" }
+  | { type: "start_timer"; started_at?: string | null }
   | { type: "stop_timer"; draft: CompanionDraft }
   | {
       type: "save_block"
@@ -412,6 +412,16 @@ function clarificationQuestion(draft: CompanionDraft) {
   return "what else should i add before i log it?"
 }
 
+function demoTimerStartFromDraft(draft: CompanionDraft) {
+  if (draft.started_at && !draft.ended_at) return draft.started_at
+
+  if (draft.duration_minutes && !draft.started_at && !draft.ended_at) {
+    return new Date(Date.now() - draft.duration_minutes * 60_000).toISOString()
+  }
+
+  return null
+}
+
 async function routeMessage(input: DemoCompanionRequest, recentMessages: DemoCompanionRequest["session"]["messages"], models: DemoModels) {
   try {
     const output = await generateDemoObject({
@@ -423,7 +433,12 @@ async function routeMessage(input: DemoCompanionRequest, recentMessages: DemoCom
         "Valid intents: companion_chat, log_block, start_timer, stop_timer, analyse_blocks, clarify.",
         "Use companion_chat for ordinary conversation, emotional check-ins, uncertainty, venting, or anything not clearly asking to save completed work.",
         "Use log_block only when the user is recording completed work.",
-        "Do not invent a time window.",
+        "Use start_timer when the user explicitly starts a timer, or when ongoing language means the work is still in progress.",
+        "If the user gives only a duration, return duration_minutes.",
+        "If the user semantically says they are still doing the activity, use intent=start_timer with duration_minutes and no ended_at.",
+        "If the user semantically says they completed or are logging finished work, use intent=log_block with duration_minutes and no invented started_at/ended_at; the client will save it as ending now.",
+        "Apply intent semantics across languages; examples are illustrative, not English trigger phrases.",
+        "Do not invent explicit timestamps.",
         "Resolve relative dates and times against now and the user's timezone.",
         `Current timestamp: ${new Date().toISOString()}`,
         `User timezone: ${input.timezone || "unknown"}`,
@@ -608,7 +623,7 @@ export async function processDemoCompanionMessage(input: DemoCompanionRequest): 
     return {
       message: ack,
       messageType: "ack",
-      operation: input.session.active_timer ? null : { type: "start_timer" },
+      operation: input.session.active_timer ? null : { type: "start_timer", started_at: demoTimerStartFromDraft(mergedDraft) },
       pendingDraft: null,
       tokenCost: chargeHostedBudget ? requestEstimate + estimateTokensFromText(ack) : 0,
     }

@@ -7,27 +7,27 @@ This review tracks architecture decisions, database schema, project efficiency, 
 
 ## Current Findings
 
-### 1. High: chat logging still needs semantic duration handling
+### 1. High: chat logging needs semantic duration handling
 
-Status: open.
+Status: implemented 2026-05-24; integration coverage still needed.
 
-The chat flow still auto-builds a completed-block window from duration-only input. The product contract now distinguishes ongoing-work language from completed-work language:
+The chat flow must distinguish ongoing-work intent from completed-work logging intent, but completed-duration logging should not be blocked merely because the user omitted an explicit start time.
 
-- "i started X 30 minutes ago" and "i've been doing X for 30 minutes" should start an open active timer backdated by 30 minutes.
-- "i did X for 30 minutes", "i spent 30 minutes on X", and "log X for 30 minutes" should clarify when the completed work happened before saving, unless a start or end anchor is present.
+- Ongoing-work intent with a duration should start an open active timer backdated by that duration.
+- Completed-work logging intent with a duration and no explicit start or end anchor should save a completed block ending now and covering the immediately preceding duration.
+- This must be semantic and language-independent. It should rely on model-deciphered intent plus extracted duration, not hard-coded English trigger phrases such as "just spent".
 
-The current helper cannot represent that distinction because `deriveWindow` turns any duration-only draft into a completed window ending now. Category inference is no longer considered a bug; it is an accepted friction-reduction behavior when the content clearly supports a category.
+Current implementation: `deriveWindow` turns a completed-block draft with only `duration_minutes` into a window ending now, `processCompanionMessage` relies on model-routed semantic intent instead of English completed-duration triggers, and `startTimer` can accept a duration-only start draft by backdating `started_at` while leaving the block open. Category inference is accepted friction reduction when the content clearly supports a category.
 
 References:
-- [lib/block-draft-utils.ts](../lib/block-draft-utils.ts) — `deriveWindow` builds a now-anchored duration-only window at lines 107-115.
-- [app/actions/process-message.ts](../app/actions/process-message.ts) — `deriveWindow(mergedDraft)` is accepted as saveable at line 1779.
+- [lib/block-draft-utils.ts](../lib/block-draft-utils.ts) — `deriveWindow` derives duration-only completed-block drafts as ending now.
+- [app/actions/process-message.ts](../app/actions/process-message.ts) — start vs completed duration behavior is based on routed intent, not English completed-duration keywords.
+- [app/actions/timer.ts](../app/actions/timer.ts) — `startTimer` accepts optional past start and metadata.
 - [specs/SPECS.md](../specs/SPECS.md) — companion behavior now defines ongoing-duration vs completed-duration semantics in the Companion section.
 
 Remaining work:
-- Add intent/semantic handling before save: ongoing duration should call a start-timer path with a backdated `started_at`; completed duration should clarify when it happened.
-- Remove or narrow the duration-only fallback branch from completed-block `deriveWindow` so it cannot silently save "did X for 30 minutes" as the last 30 minutes.
+- Add server-action integration tests for the actual chat flows, not only pure helper coverage.
 - Keep category inference for clear content, but avoid inferring when the evidence is absent or ambiguous.
-- Update tests that currently codify the bad behavior, especially `tests/unit/block-draft-utils.test.ts`.
 
 ### 2. High: "today" and memory ranges are still not timezone-safe
 
@@ -245,7 +245,7 @@ Current unit tests cover:
 - secret encryption;
 - voice recorder stop stability.
 
-Important caveat: some tests still codify known-bad behavior, especially duration-only completed-block now-anchoring and server-local day boundaries.
+Important caveat: some tests still codify known-bad behavior around server-local day boundaries.
 
 ### Layer 2: Integration tests for server actions — still missing
 
@@ -258,7 +258,7 @@ Priority behaviors:
 - save/edit/delete block rules;
 - note-version and insight regeneration;
 - memory cache invalidation on block edits;
-- chat clarification vs. auto-save decisions, including ongoing-duration open timers vs completed-duration clarification;
+- chat clarification vs. auto-save decisions, including ongoing-duration open timers vs completed-duration blocks ending now;
 - timezone-sensitive "today" range handling;
 - BYOK model resolution on all model-using paths.
 
