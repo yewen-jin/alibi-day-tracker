@@ -228,4 +228,86 @@ describe("dashboard view spec validation", () => {
       ),
     ).toThrow(/unknown or altered evidence/)
   })
+
+  it("accepts retrieved dashboard evidence only when copied exactly", () => {
+    const input = emptyInput()
+    const packet = buildDashboardEvidencePacket(input, {
+      rag: {
+        query: "invoice friction",
+        chunks: [
+          {
+            id: "time_block:block-1:0",
+            sourceType: "time_block",
+            sourceCreatedAt: "2026-01-01T10:00:00.000Z",
+            chunkText: "saved time block: invoice\nnotes: finished after avoiding it",
+            metadata: { source_label: "invoice" },
+          },
+        ],
+      },
+    })
+    const spec = validateDashboardViewSpec({
+      version: 1,
+      title: "retrieved",
+      description: "retrieved evidence result",
+      sections: [
+        {
+          id: "observations",
+          type: "observation_list",
+          title: "observations",
+        },
+      ],
+    })
+    const evidence = packet.evidence[0]
+
+    expect(packet.evidence_synthesis?.cited_chunk_ids).toContain("time_block:block-1:0")
+    expect(() =>
+      validateDashboardViewResult(
+        {
+          version: 1,
+          generated_at: "2026-01-01T00:00:00.000Z",
+          input_window_start: null,
+          input_window_end: null,
+          sections: [
+            {
+              id: "observations",
+              type: "observation_list",
+              observations: [
+                {
+                  title: "invoice",
+                  body: "the retrieved record shows invoice friction.",
+                  evidence: [evidence],
+                },
+              ],
+            },
+          ],
+        },
+        { spec, allowedEvidence: packet.evidence },
+      ),
+    ).not.toThrow()
+
+    expect(() =>
+      validateDashboardViewResult(
+        {
+          version: 1,
+          generated_at: "2026-01-01T00:00:00.000Z",
+          input_window_start: null,
+          input_window_end: null,
+          sections: [
+            {
+              id: "observations",
+              type: "observation_list",
+              observations: [
+                {
+                  title: "altered",
+                  body: "this changes the copied retrieved source.",
+                  evidence: [{ ...evidence, excerpt: "altered excerpt" }],
+                },
+              ],
+            },
+          ],
+        },
+        { spec, allowedEvidence: packet.evidence },
+      ),
+    ).toThrow(/unknown or altered evidence/)
+  })
 })

@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { anthropicCacheOptions, companionModelId } from "@/lib/ai";
@@ -22,6 +23,14 @@ import {
   buildCompanionMemoryContext,
   formatBlockForMemory,
 } from "@/lib/memory-context";
+import {
+  indexMemoryForCompanionMessage,
+  indexMemoryForCompanionMessageInsight,
+} from "@/lib/rag/indexer";
+import {
+  retrieveMemoryContext,
+  type RetrievedMemoryContext,
+} from "@/lib/rag/retriever";
 import { createClient } from "@/lib/supabase/server";
 import { saveBlock, startTimer, stopTimer } from "./timer";
 import type {
@@ -751,7 +760,16 @@ async function upsertCompanionMessageInsight(
       userId: message.user_id,
       error: error.message,
     });
+    return;
   }
+
+  await indexMemoryForCompanionMessageInsight(insight).catch((indexError) => {
+    console.error("failed to index companion message insight", {
+      messageId: message.id,
+      userId: message.user_id,
+      error: indexError instanceof Error ? indexError.message : String(indexError),
+    });
+  });
 }
 
 async function getPendingDraft(
@@ -1090,6 +1108,79 @@ const analysisSynthSchema = z.object({
   pattern_hint: z.string().nullable().default(null),
 });
 
+function retrievalMetadata(retrieval: RetrievedMemoryContext) {
+  return {
+    rag: {
+      chunk_ids: retrieval.chunks.map((chunk) => chunk.id),
+      source_ids: retrieval.sourceSummaries.map((source) => source.sourceId),
+      score: retrieval.score,
+      date_window: retrieval.dateWindow,
+    },
+  };
+}
+
+async function retrievedCompanionMemory({
+  supabase,
+  userId,
+  message,
+  draft,
+  recentMessages,
+  useCase,
+}: {
+  supabase: Supabase;
+  userId: string;
+  message: string;
+  draft: CompanionDraft | null | undefined;
+  recentMessages: CompanionMessage[];
+  useCase: "companion_chat" | "companion_analysis";
+}) {
+  const fallback = await buildCompanionMemoryContext({
+    supabase,
+    userId,
+    message,
+    draft,
+    recentMessages,
+  });
+  const retrieval = await retrieveMemoryContext({
+    userId,
+    query: message,
+    useCase,
+    dateRange:
+      fallback.range.scope === "today" || fallback.range.scope === "all_history"
+        ? undefined
+        : fallback.range,
+    sourceTypes: [
+      "time_block",
+      "time_block_insight",
+      "companion_message",
+      "companion_message_insight",
+      "time_block_note_version",
+    ],
+    limit: useCase === "companion_analysis" ? 14 : 10,
+  });
+  const evidenceText =
+    retrieval.chunks.length > 0
+      ? [
+          retrieval.promptText,
+          "",
+          "recent visible messages:",
+          fallback.recentMessages.length
+            ? fallback.recentMessages
+                .map(
+                  (msg) =>
+                    `- ${new Date(msg.created_at).toLocaleString("en-GB", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })} ${msg.role}: ${msg.content}`,
+                )
+                .join("\n")
+            : "(none)",
+        ].join("\n")
+      : fallback.evidenceText;
+
+  return { fallback, retrieval, evidenceText };
+}
+
 async function analyseBlocks({
   models,
   supabase,
@@ -1107,13 +1198,13 @@ async function analyseBlocks({
   draft: CompanionDraft | null | undefined;
   recentMessages: CompanionMessage[];
 }) {
-  const memory = await buildCompanionMemoryContext({
+  const memory = await retrievedCompanionMemory({
     supabase,
     userId,
-    conversation,
     message,
     draft,
     recentMessages,
+    useCase: "companion_analysis",
   });
 
   // Two-tier analysis: the fast model digests the (potentially large) memory
@@ -1135,7 +1226,7 @@ async function analyseBlocks({
       prompt: [
         `User asked: ${message}`,
         `Pending draft, if any: ${JSON.stringify(draft ?? null)}`,
-        `Memory range: ${memory.range.label}`,
+        `Memory range: ${memory.fallback.range.label}`,
         "",
         "Memory context:",
         memory.evidenceText,
@@ -1147,8 +1238,11 @@ async function analyseBlocks({
   }
 
   if (!synth || (!synth.summary.trim() && synth.key_evidence.length === 0)) {
-    if (memory.blocks.length === 0 && memory.chatInsights.length === 0) {
-      return `nothing on the record for ${memory.range.label}.`;
+    if (memory.fallback.blocks.length === 0 && memory.fallback.chatInsights.length === 0) {
+      return {
+        text: `nothing on the record for ${memory.fallback.range.label}.`,
+        retrieval: memory.retrieval,
+      };
     }
   }
 
@@ -1165,24 +1259,33 @@ async function analyseBlocks({
       ].join("\n"),
       prompt: [
         `User asked: ${message}`,
-        `Memory range: ${memory.range.label}`,
+        `Memory range: ${memory.fallback.range.label}`,
         "",
         "Synthesis (use as the only evidence):",
         JSON.stringify(synth ?? { summary: "", key_evidence: [], pattern_hint: null }),
       ].join("\n"),
     });
 
-    return text.trim() || `nothing on the record for ${memory.range.label}.`;
+    return {
+      text: text.trim() || `nothing on the record for ${memory.fallback.range.label}.`,
+      retrieval: memory.retrieval,
+    };
   } catch {
-    if (memory.blocks.length === 0 && memory.chatInsights.length === 0) {
-      return `nothing on the record for ${memory.range.label}.`;
+    if (memory.fallback.blocks.length === 0 && memory.fallback.chatInsights.length === 0) {
+      return {
+        text: `nothing on the record for ${memory.fallback.range.label}.`,
+        retrieval: memory.retrieval,
+      };
     }
 
-    return `${memory.range.label} has ${memory.blocks.length} saved block${
-      memory.blocks.length === 1 ? "" : "s"
-    } and ${memory.chatInsights.length} chat-derived observation${
-      memory.chatInsights.length === 1 ? "" : "s"
-    }.`;
+    return {
+      text: `${memory.fallback.range.label} has ${memory.fallback.blocks.length} saved block${
+        memory.fallback.blocks.length === 1 ? "" : "s"
+      } and ${memory.fallback.chatInsights.length} chat-derived observation${
+        memory.fallback.chatInsights.length === 1 ? "" : "s"
+      }.`,
+      retrieval: memory.retrieval,
+    };
   }
 }
 
@@ -1203,13 +1306,13 @@ async function companionChat({
   draft: CompanionDraft | null | undefined;
   recentMessages: CompanionMessage[];
 }) {
-  const memory = await buildCompanionMemoryContext({
+  const memory = await retrievedCompanionMemory({
     supabase,
     userId,
-    conversation,
     message,
     draft,
     recentMessages,
+    useCase: "companion_chat",
   });
 
   try {
@@ -1223,7 +1326,10 @@ async function companionChat({
         "Never claim you saved, logged, added, edited, or changed a time block. Only tool-result acknowledgments can say that.",
         "Do not ask for exact time or duration unless the user is clearly trying to log completed work.",
         "If the user is vague, respond conversationally first; you may ask one gentle open question.",
-        "Use the memory context as grounding, not as a script.",
+        "Use only the retrieved memory and recent visible messages as grounding, not as a script.",
+        "Alibi can retrieve from saved time blocks, notes, companion chat, and derived memory chunks across saved history when the user asks for that scope.",
+        "Do not say you only have access to today unless the supplied memory explicitly proves the saved record is limited to today.",
+        "Mention source dates or phrases naturally when they help. If the record is thin, say so plainly.",
         "Treat block notes as the strongest source; use chat-derived insights for broader patterns around intention, friction, emotion, useful drift, and mismatch.",
         "Stay under 70 words.",
       ].join("\n"),
@@ -1235,9 +1341,15 @@ async function companionChat({
       ].join("\n"),
     });
 
-    return text.trim() || "i'm here. tell me the shape of it.";
+    return {
+      text: text.trim() || "i'm here. tell me the shape of it.",
+      retrieval: memory.retrieval,
+    };
   } catch (error) {
-    return describeModelFailure(error, models.provider, models.companionModelId);
+    return {
+      text: describeModelFailure(error, models.provider, models.companionModelId),
+      retrieval: memory.retrieval,
+    };
   }
 }
 
@@ -1395,6 +1507,16 @@ export async function processCompanionMessage(
       message: userMessage.message,
     });
   }
+
+  after(() =>
+    indexMemoryForCompanionMessage(userMessage.message).catch((error) => {
+      console.error("failed to index companion message memory", {
+        messageId: userMessage.message.id,
+        userId: user.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }),
+  );
 
   // Run chat-insight extraction inline. Tempting to wrap in `after()` for
   // latency, but the Supabase client captured here reads cookies on every
@@ -1609,7 +1731,7 @@ export async function processCompanionMessage(
   }
 
   if (routed.intent === "analyse_blocks") {
-    const message = await analyseBlocks({
+    const reply = await analyseBlocks({
       models,
       supabase,
       userId: user.id,
@@ -1621,10 +1743,11 @@ export async function processCompanionMessage(
     return finishWithAssistant(
       {
         type: "analysis",
-        message,
+        message: reply.text,
       },
-      message,
+      reply.text,
       "analysis",
+      retrievalMetadata(reply.retrieval),
     );
   }
 
@@ -1633,7 +1756,7 @@ export async function processCompanionMessage(
       await resolvePendingDraft(supabase, user.id, conversation.id);
     }
 
-    const message = await companionChat({
+    const reply = await companionChat({
       models,
       supabase,
       userId: user.id,
@@ -1645,10 +1768,11 @@ export async function processCompanionMessage(
     return finishWithAssistant(
       {
         type: "conversation",
-        message,
+        message: reply.text,
       },
-      message,
+      reply.text,
       "chat",
+      retrievalMetadata(reply.retrieval),
     );
   }
 

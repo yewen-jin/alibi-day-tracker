@@ -2,6 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import type { VoiceCaptureStatus } from "@/lib/use-voice-capture";
+import type { VoiceTelemetryEvent } from "@/lib/voice-telemetry";
 import { cn } from "@/lib/utils";
 
 type VoiceCaptureStatusRowProps = {
@@ -11,6 +12,8 @@ type VoiceCaptureStatusRowProps = {
   lastTranscript: string;
   error: string | null;
   registeredLabel?: string;
+  sessionId?: string | null;
+  getRecentEvents?: () => VoiceTelemetryEvent[];
 };
 
 function formatDuration(durationMs: number) {
@@ -41,6 +44,68 @@ function AudioLevelBars({ audioLevel }: { audioLevel: number }) {
   );
 }
 
+function VoiceDiagnostics({
+  sessionId,
+  getRecentEvents,
+}: {
+  sessionId?: string | null;
+  getRecentEvents?: () => VoiceTelemetryEvent[];
+}) {
+  if (!sessionId && !getRecentEvents) return null;
+
+  const events = getRecentEvents?.() ?? [];
+  const recent = events.slice(-12);
+
+  async function copyDiagnostics() {
+    try {
+      const payload = {
+        session_id: sessionId ?? null,
+        captured_at: new Date().toISOString(),
+        events,
+      };
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    } catch {
+      // ignore — clipboard may be unavailable
+    }
+  }
+
+  return (
+    <details className="mt-2 text-xs opacity-80">
+      <summary className="cursor-pointer select-none">
+        diagnostics{sessionId ? ` · session ${sessionId.slice(0, 8)}` : ""}
+      </summary>
+      <div className="mt-2 space-y-2">
+        {sessionId && (
+          <div className="font-mono text-[0.7rem] break-all">
+            session: {sessionId}
+          </div>
+        )}
+        {recent.length > 0 ? (
+          <ol className="space-y-0.5 font-mono text-[0.7rem]">
+            {recent.map((event, index) => (
+              <li key={`${event.ts}-${index}`}>
+                {String(event.elapsed_ms).padStart(5, " ")}ms · {event.phase}
+                {event.data ? ` · ${JSON.stringify(event.data)}` : ""}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="font-mono text-[0.7rem]">no events captured</div>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            void copyDiagnostics();
+          }}
+          className="alibi-button-secondary px-2 py-1 text-[0.7rem]"
+        >
+          copy diagnostics
+        </button>
+      </div>
+    </details>
+  );
+}
+
 export function VoiceCaptureStatusRow({
   status,
   durationMs,
@@ -48,13 +113,19 @@ export function VoiceCaptureStatusRow({
   lastTranscript,
   error,
   registeredLabel = "registered",
+  sessionId,
+  getRecentEvents,
 }: VoiceCaptureStatusRowProps) {
   if (status === "idle") return null;
 
   if (status === "error") {
     return (
       <div role="alert" aria-live="polite" className="alibi-banner-error mt-3">
-        {error ?? "voice capture failed."}
+        <div>{error ?? "voice capture failed."}</div>
+        <VoiceDiagnostics
+          sessionId={sessionId}
+          getRecentEvents={getRecentEvents}
+        />
       </div>
     );
   }

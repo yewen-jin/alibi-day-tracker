@@ -15,6 +15,7 @@ export type MemoryScope =
   | "today"
   | "yesterday"
   | "recent_days"
+  | "all_history"
   | "date_range"
 
 export interface MemoryRange {
@@ -136,6 +137,20 @@ export function inferMemoryRange(
       addDays(todayStart, -29),
       tomorrowStart,
       "last 30 days",
+    )
+  }
+
+  if (
+    /\b(beyond|outside)\s+today\b/.test(normalized) ||
+    /\banything\s+(before|older than|outside|beyond)\s+today\b/.test(normalized) ||
+    /\b(all|full|entire)\s+(history|memory|record|records)\b/.test(normalized) ||
+    /\b(long[-\s]?term|past)\s+(memory|record|records)\b/.test(normalized)
+  ) {
+    return memoryRange(
+      "all_history",
+      new Date(0),
+      tomorrowStart,
+      "all saved memory",
     )
   }
 

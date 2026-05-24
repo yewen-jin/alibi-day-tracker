@@ -105,6 +105,8 @@ export function dashboardSystemPrompt(mode: "create" | "refresh" | "update") {
     "",
     "How to read text data:",
     "- packet.evidence contains qualitative notes, chat, and block excerpts.",
+    "- packet.retrieved_evidence contains semantically retrieved source chunks for the user's dashboard request.",
+    "- packet.evidence_synthesis is the first-stage synthesis of retrieved chunks; use it to choose qualitative sections, but cite copied packet.evidence objects in final output.",
     "- Use text evidence for observations, patterns, and source-backed claims.",
     "- Do not treat text excerpts as universal truth; phrase claims as signals from the available record.",
     "",

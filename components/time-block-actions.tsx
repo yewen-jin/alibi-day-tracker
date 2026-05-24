@@ -155,9 +155,11 @@ export function CompanionChatPanel({
     audioLevel,
     lastTranscript,
     error: voiceError,
+    sessionId: voiceSessionId,
     startRecording,
     stopRecording,
     resetVoiceState,
+    getRecentEvents: getRecentVoiceEvents,
   } = useVoiceCapture({ fileName: "alibi-voice.webm" });
   const recording = voiceStatus === "recording";
   const voiceBusy =
@@ -406,6 +408,8 @@ export function CompanionChatPanel({
         audioLevel={audioLevel}
         lastTranscript={lastTranscript}
         error={voiceError}
+        sessionId={voiceSessionId}
+        getRecentEvents={getRecentVoiceEvents}
       />
       {speechError && <div className="alibi-banner-error mt-3">{speechError}</div>}
     </section>
