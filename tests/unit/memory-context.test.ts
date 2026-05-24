@@ -150,6 +150,14 @@ describe("inferMemoryRange", () => {
     expect(new Date(result.end).getTime() - new Date(result.start).getTime()).toBe(7 * dayMs)
   })
 
+  it("expands history capability questions beyond today's scope", () => {
+    const result = inferMemoryRange("do you have access to anything beyond today?", null, now)
+
+    expect(result.scope).toBe("all_history")
+    expect(result.label).toBe("all saved memory")
+    expect(result.start).toBe(new Date(0).toISOString())
+  })
+
   it("uses a complete draft window as explicit context", () => {
     const result = inferMemoryRange(
       "analyse that block",

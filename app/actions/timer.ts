@@ -5,6 +5,12 @@ import { after } from "next/server"
 import { generateNoteInsight } from "@/lib/ai-note-insights"
 import { getDb } from "@/lib/db/client"
 import { invalidateMemoryContextForUser } from "@/lib/memory-context"
+import {
+  deleteMemoryChunksForTimeBlock,
+  indexMemoryForTimeBlock,
+  indexMemoryForTimeBlockInsight,
+  indexMemoryForTimeBlockNoteVersion,
+} from "@/lib/rag/indexer"
 import { deriveInsightFromNotes } from "@/lib/note-insights"
 import { attachEvidenceSourceId } from "@/lib/evidence-claims"
 import { createClient } from "@/lib/supabase/server"
@@ -36,6 +42,8 @@ import type {
   TimeBlock,
   TimeBlockCategory,
   TimeBlockCategoryRecord,
+  TimeBlockInsight,
+  TimeBlockNoteVersion,
   EffortLevel,
   Mood,
   NoteVersionSource,
@@ -487,6 +495,17 @@ async function storeNoteInsightAfterResponse(
       }),
     )
     .execute()
+
+  const stored = await db
+    .selectFrom("time_block_insights")
+    .selectAll()
+    .where("time_block_id", "=", timeBlock.id)
+    .where("user_id", "=", userId)
+    .executeTakeFirst()
+
+  if (stored) {
+    await indexMemoryForTimeBlockInsight(stored as TimeBlockInsight)
+  }
 }
 
 async function preserveNotesAndInsights(
@@ -508,6 +527,23 @@ async function preserveNotesAndInsights(
     timeBlock.notes,
     source,
   )
+  if (noteVersionId) {
+    const { data: noteVersion } = await supabase
+      .from("time_block_note_versions")
+      .select("*")
+      .eq("id", noteVersionId)
+      .eq("user_id", userId)
+      .maybeSingle()
+    if (noteVersion) {
+      after(() =>
+        indexMemoryForTimeBlockNoteVersion(
+          noteVersion as TimeBlockNoteVersion,
+        ).catch((error) => {
+          console.error("failed to index note version memory", error)
+        }),
+      )
+    }
+  }
   after(() =>
     storeNoteInsightAfterResponse(userId, timeBlock, noteVersionId).catch((error) => {
       console.error("failed to store note insight", error)
@@ -519,6 +555,14 @@ function syncCalendarAfterResponse(userId: string, timeBlock: TimeBlock) {
   after(() =>
     syncTimeBlockToGoogleCalendar(userId, timeBlock).catch((error) => {
       console.error("failed to sync time block to google calendar", error)
+    }),
+  )
+}
+
+function indexTimeBlockAfterResponse(timeBlock: TimeBlock) {
+  after(() =>
+    indexMemoryForTimeBlock(timeBlock).catch((error) => {
+      console.error("failed to index time block memory", error)
     }),
   )
 }
@@ -1051,6 +1095,7 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
   }
 
   syncCalendarAfterResponse(user.id, timeBlock)
+  indexTimeBlockAfterResponse(timeBlock)
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
@@ -1156,6 +1201,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
     )
 
     syncCalendarAfterResponse(user.id, timeBlock as TimeBlock)
+    indexTimeBlockAfterResponse(timeBlock as TimeBlock)
 
     revalidatePath("/app")
     revalidatePath("/app/dashboard")
@@ -1189,6 +1235,7 @@ export async function saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>
   )
 
   syncCalendarAfterResponse(user.id, timeBlock as TimeBlock)
+  indexTimeBlockAfterResponse(timeBlock as TimeBlock)
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")
@@ -1237,6 +1284,12 @@ export async function deleteBlock(input: DeleteBlockInput): Promise<DeleteBlockR
   if (!timeBlock) {
     return { type: "not_found" }
   }
+
+  after(() =>
+    deleteMemoryChunksForTimeBlock(user.id, validated.id).catch((error) => {
+      console.error("failed to delete time block memory chunks", error)
+    }),
+  )
 
   revalidatePath("/app")
   revalidatePath("/app/dashboard")

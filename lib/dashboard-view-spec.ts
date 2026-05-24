@@ -162,6 +162,14 @@ export interface DashboardViewEvidencePacket {
     markers: string[]
   }>
   evidence: DashboardViewEvidence[]
+  retrieved_evidence?: DashboardViewEvidence[]
+  evidence_synthesis?: {
+    query: string
+    themes: string[]
+    contradictions: string[]
+    recurring_signals: string[]
+    cited_chunk_ids: string[]
+  }
 }
 
 export function validateDashboardViewSpec(input: unknown): DashboardViewSpec {
@@ -241,6 +249,10 @@ function stableId(...parts: Array<string | null | undefined>) {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 100)
+}
+
+function evidenceId(value: string) {
+  return stableId(value).slice(0, 120)
 }
 
 function collectEvidenceRefs(result: DashboardViewResult) {
@@ -346,6 +358,80 @@ function evidenceFromInput(input: DashboardSkillInput): DashboardViewEvidence[] 
   return [...noteEvidence, ...chatEvidence, ...blockEvidence].slice(0, 12)
 }
 
+interface RetrievedDashboardChunk {
+  id: string
+  sourceType: string
+  sourceCreatedAt: string
+  chunkText: string
+  metadata: Record<string, unknown>
+}
+
+interface DashboardRagContext {
+  query: string
+  chunks: RetrievedDashboardChunk[]
+}
+
+function sourceTypeToEvidenceType(sourceType: string): DashboardViewEvidence["type"] {
+  if (sourceType.includes("chat") || sourceType === "companion_message") {
+    return "chat"
+  }
+  if (sourceType.includes("insight") || sourceType.includes("note")) {
+    return "note"
+  }
+  return "block"
+}
+
+function retrievedEvidence(
+  rag: DashboardRagContext | null | undefined,
+): DashboardViewEvidence[] {
+  return (rag?.chunks ?? []).slice(0, 12).map((chunk) => ({
+    id: evidenceId(`rag-${chunk.id}`),
+    type: sourceTypeToEvidenceType(chunk.sourceType),
+    label:
+      typeof chunk.metadata.source_label === "string"
+        ? chunk.metadata.source_label.slice(0, 120)
+        : chunk.sourceType,
+    excerpt: compactText(chunk.chunkText, 500) ?? chunk.sourceType,
+    written_at: chunk.sourceCreatedAt,
+  }))
+}
+
+function evidenceSynthesis(rag: DashboardRagContext | null | undefined) {
+  if (!rag || rag.chunks.length === 0) return undefined
+  const text = rag.chunks.map((chunk) => chunk.chunkText.toLowerCase()).join("\n")
+  const signalWords = [
+    "avoidance",
+    "friction",
+    "hyperfocus",
+    "satisfaction",
+    "uncertainty",
+    "emotion",
+    "useful drift",
+    "mismatch",
+  ]
+  const recurring = signalWords.filter((word) => text.includes(word))
+  const themes = Array.from(
+    new Set(
+      rag.chunks
+        .flatMap((chunk) =>
+          Array.isArray(chunk.metadata.tags) ? chunk.metadata.tags : [],
+        )
+        .filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())),
+    ),
+  ).slice(0, 6)
+
+  return {
+    query: rag.query,
+    themes: themes.length ? themes : recurring.slice(0, 4),
+    contradictions:
+      text.includes("satisfaction") && text.includes("friction")
+        ? ["some retrieved records pair friction with satisfaction; phrase this as a mixed signal."]
+        : [],
+    recurring_signals: recurring,
+    cited_chunk_ids: rag.chunks.slice(0, 12).map((chunk) => chunk.id),
+  }
+}
+
 function markersForBlock(block: DashboardSkillInput["blocks"][number]) {
   return [
     block.avoidance_marker ? "avoidance" : null,
@@ -357,11 +443,14 @@ function markersForBlock(block: DashboardSkillInput["blocks"][number]) {
 
 export function buildDashboardEvidencePacket(
   input: DashboardSkillInput,
+  options: { rag?: DashboardRagContext | null } = {},
 ): DashboardViewEvidencePacket {
   const window = dateWindow(input)
   const totalMinutes = Math.round(
     input.blocks.reduce((sum, block) => sum + (block.duration_seconds ?? 0), 0) / 60,
   )
+
+  const ragEvidence = retrievedEvidence(options.rag)
 
   return {
     version: 1,
@@ -414,7 +503,9 @@ export function buildDashboardEvidencePacket(
       satisfaction: block.satisfaction,
       markers: markersForBlock(block),
     })),
-    evidence: evidenceFromInput(input),
+    evidence: [...ragEvidence, ...evidenceFromInput(input)].slice(0, 18),
+    retrieved_evidence: ragEvidence,
+    evidence_synthesis: evidenceSynthesis(options.rag),
   }
 }
 

@@ -188,6 +188,54 @@ export interface DashboardViewGenerationLogRecord {
   created_at: string
 }
 
+export type MemoryChunkSourceType =
+  | "time_block"
+  | "time_block_insight"
+  | "companion_message"
+  | "companion_message_insight"
+  | "time_block_note_version"
+
+export type MemoryChunkStatus = "pending" | "embedded" | "failed" | "stale"
+
+export interface MemoryChunk {
+  id: string
+  user_id: string
+  source_type: MemoryChunkSourceType
+  source_id: string
+  source_created_at: string
+  chunk_index: number
+  chunk_text: string
+  metadata: Record<string, unknown>
+  content_hash: string
+  status: MemoryChunkStatus
+  error: string | null
+  embedded_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RagRetrievalLog {
+  id: string
+  user_id: string
+  use_case:
+    | "companion_chat"
+    | "companion_analysis"
+    | "dashboard_create"
+    | "dashboard_refresh"
+    | "dashboard_update"
+  query: string
+  source_types: string[] | null
+  date_range_start: string | null
+  date_range_end: string | null
+  match_count: number
+  top_source_ids: string[]
+  max_similarity: number | null
+  min_similarity: number | null
+  status: "success" | "fallback" | "error"
+  error: string | null
+  created_at: string
+}
+
 export type CompanionMessageRole = "user" | "assistant"
 export type CompanionMessageType =
   | "chat"

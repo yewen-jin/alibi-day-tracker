@@ -41,9 +41,11 @@ export function VoiceTextarea({
     audioLevel,
     lastTranscript,
     error,
+    sessionId,
     startRecording,
     stopRecording,
     resetVoiceState,
+    getRecentEvents,
   } = useVoiceCapture({ fileName: "alibi-dashboard-dictation.webm" })
 
   const recording = status === "recording"
@@ -117,6 +119,8 @@ export function VoiceTextarea({
         lastTranscript={lastTranscript}
         error={error}
         registeredLabel="inserted"
+        sessionId={sessionId}
+        getRecentEvents={getRecentEvents}
       />
     </div>
   )

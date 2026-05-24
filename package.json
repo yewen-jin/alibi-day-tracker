@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "backfill:rag": "node scripts/backfill-rag.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test"

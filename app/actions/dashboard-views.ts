@@ -5,6 +5,7 @@ import { redirect } from "next/navigation"
 import { resolveAiModelsForUser } from "@/lib/ai-settings"
 import { getCurrentUser, syncAppUser } from "@/lib/auth/session"
 import { loadDashboardSkillInput } from "@/lib/dashboard-context"
+import { retrieveMemoryContext } from "@/lib/rag/retriever"
 import {
   dashboardErrorSpec,
   type DashboardGenerationAttemptLog,
@@ -39,6 +40,39 @@ async function requireUser() {
   return user
 }
 
+async function buildDashboardPacket(
+  userId: string,
+  prompt: string,
+  useCase: "dashboard_create" | "dashboard_refresh" | "dashboard_update",
+) {
+  const input = await loadDashboardSkillInput(userId)
+  const retrieval = await retrieveMemoryContext({
+    userId,
+    query: prompt,
+    useCase,
+    sourceTypes: [
+      "time_block",
+      "time_block_insight",
+      "companion_message",
+      "companion_message_insight",
+      "time_block_note_version",
+    ],
+    limit: 12,
+  })
+  return buildDashboardEvidencePacket(input, {
+    rag: {
+      query: prompt,
+      chunks: retrieval.chunks.map((chunk) => ({
+        id: chunk.id,
+        sourceType: chunk.sourceType,
+        sourceCreatedAt: chunk.sourceCreatedAt,
+        chunkText: chunk.chunkText,
+        metadata: chunk.metadata,
+      })),
+    },
+  })
+}
+
 export async function createDashboardViewDraftAction(formData: FormData) {
   const user = await requireUser()
   const prompt = String(formData.get("prompt") ?? "").trim()
@@ -51,8 +85,7 @@ export async function createDashboardViewDraftAction(formData: FormData) {
     redirect("/app/dashboard")
   }
 
-  const input = await loadDashboardSkillInput(user.id)
-  const packet = buildDashboardEvidencePacket(input)
+  const packet = await buildDashboardPacket(user.id, prompt, "dashboard_create")
   const models = await resolveAiModelsForUser(user.id)
   let spec = dashboardErrorSpec(prompt)
   let result: DashboardViewResult | null = null
@@ -125,8 +158,11 @@ export async function refreshDashboardViewAction(viewId: string) {
   if (!view || view.status === "archived") redirect("/app/dashboard")
   const models = await resolveAiModelsForUser(user.id)
   const attempts: DashboardGenerationAttemptLog[] = []
-  const input = await loadDashboardSkillInput(user.id)
-  const packet = buildDashboardEvidencePacket(input)
+  const packet = await buildDashboardPacket(
+    user.id,
+    view.source_prompt,
+    "dashboard_refresh",
+  )
 
   try {
     const spec = validateDashboardViewSpec(view.spec)
@@ -222,8 +258,11 @@ export async function updateDashboardViewAction(viewId: string, formData: FormDa
     redirect(`/app/dashboard?view=${view.slug}`)
   }
 
-  const input = await loadDashboardSkillInput(user.id)
-  const packet = buildDashboardEvidencePacket(input)
+  const packet = await buildDashboardPacket(
+    user.id,
+    [view.source_prompt, updateRequest].join("\n"),
+    "dashboard_update",
+  )
   const models = await resolveAiModelsForUser(user.id)
   const attempts: DashboardGenerationAttemptLog[] = []
   const savedSpec = validateDashboardViewSpec(view.spec)

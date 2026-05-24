@@ -300,6 +300,56 @@ interface DashboardViewGenerationLogsTable {
   created_at: GeneratedTimestamp;
 }
 
+interface MemoryChunksTable {
+  id: string;
+  user_id: string;
+  source_type: string;
+  source_id: string;
+  source_created_at: Timestamp;
+  chunk_index: Generated<number>;
+  chunk_text: string;
+  metadata: Generated<JsonValue>;
+  embedding: ColumnType<unknown | null, unknown | null | undefined, unknown | null>;
+  content_hash: string;
+  status: Generated<string>;
+  error: string | null;
+  embedded_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+interface VoiceCaptureLogsTable {
+  id: Generated<string>;
+  user_id: string;
+  session_id: string;
+  outcome: "success" | "error" | "aborted";
+  error_message: string | null;
+  client_started_at: Timestamp;
+  client_finalized_at: Timestamp;
+  duration_ms: number | null;
+  session_meta: Generated<JsonValue>;
+  events: Generated<JsonValue>;
+  server_meta: Generated<JsonValue>;
+  created_at: GeneratedTimestamp;
+}
+
+interface RagRetrievalLogsTable {
+  id: Generated<string>;
+  user_id: string;
+  use_case: string;
+  query: string;
+  source_types: string[] | null;
+  date_range_start: NullableTimestamp;
+  date_range_end: NullableTimestamp;
+  match_count: Generated<number>;
+  top_source_ids: Generated<string[]>;
+  max_similarity: number | null;
+  min_similarity: number | null;
+  status: Generated<string>;
+  error: string | null;
+  created_at: GeneratedTimestamp;
+}
+
 export interface Database {
   app_users: AppUsersTable;
   entries: EntriesTable;
@@ -321,6 +371,9 @@ export interface Database {
   dashboard_views: DashboardViewsTable;
   dashboard_view_runs: DashboardViewRunsTable;
   dashboard_view_generation_logs: DashboardViewGenerationLogsTable;
+  memory_chunks: MemoryChunksTable;
+  rag_retrieval_logs: RagRetrievalLogsTable;
+  voice_capture_logs: VoiceCaptureLogsTable;
 }
 
 export type AppUserRow = Selectable<AppUsersTable>;
