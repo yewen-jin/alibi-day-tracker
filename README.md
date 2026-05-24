@@ -44,7 +44,8 @@ Chat can:
 - respond conversationally without forcing a log
 - start or stop the timer
 - log completed work into `time_blocks`
-- ask for missing task or completed-work timing before saving, while inferring clear categories to reduce friction
+- parse duration intent semantically: ongoing work starts a backdated open timer, completed work logs the duration ending now
+- ask for missing task or ambiguous category evidence before saving, while inferring clear categories to reduce friction
 - answer check-ins and pattern questions from saved evidence
 
 Chat history is useful context, but block notes are treated as stronger evidence.

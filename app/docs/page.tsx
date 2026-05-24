@@ -75,7 +75,8 @@ const SECTIONS: WikiSection[] = [
     points: [
       "ask it to help reconstruct a messy block when you remember fragments.",
       "ask it to turn a rambling description into a time-block note.",
-      "tell it to ask follow-up questions before saving if timing or category is unclear.",
+      "use natural duration language: ongoing work starts an open timer in the past, while completed work logs the duration ending now.",
+      "tell it to ask follow-up questions before saving if task or category evidence is unclear.",
       "ask for evidence-backed reflections, such as what your notes show this week.",
       "use it when you feel like you did nothing; it can read saved blocks back with specifics.",
       "use chat about this on a saved block when you want reflection scoped to one block and its note.",
@@ -122,7 +123,7 @@ const SECTIONS: WikiSection[] = [
       "companion conversations keep general chat separate from block-specific chats.",
       "block chats store compact block context so the agent can use the note without loading unrelated history.",
       "note versions preserve meaningful edits instead of silently losing the old version.",
-      "future retrieval should cite source records instead of producing unsupported summaries.",
+      "retrieval uses source-linked records and memory chunks; observations should stay tied to dated blocks, excerpts, or messages.",
     ],
   },
   {
@@ -135,7 +136,7 @@ const SECTIONS: WikiSection[] = [
       "hosted default fast model is deepseek chat v3. it classifies what you typed and pulls structured fields like time and category.",
       "hosted default companion model is anthropic claude haiku 4.5. it writes the reply and matches the alibi voice guide.",
       "non-visible work like chat-insight and note-insight extraction runs on the fast model so the bill stays small. custom dashboards use the companion model internally to analyze a server-built evidence packet.",
-      "chat-insight extraction is deferred past the response, so the reply ships first and the derived insight lands a moment later.",
+      "chat-insight and note-insight extraction run inline on the fast model so derived mirrors stay reliable after each saved message or note.",
       "the analyse path uses the fast model to gather evidence from the memory packet, then the companion model rewrites only that summary in the alibi voice. the long evidence packet never pays companion-tier price.",
       "on direct anthropic profiles, the system prompt and voice guide are sent with ephemeral prompt caching, so repeat turns bill cached input at a fraction of the normal rate.",
       "settings ships presets for openrouter, openai, anthropic, deepseek, qwen (dashscope), zhipu glm, and moonshot kimi. any openai-compatible base url also works, including a local llama.cpp or vllm server.",
@@ -163,6 +164,8 @@ const CHAT_PROMPTS = [
   "help me reconstruct the last two hours before you save anything.",
   "ask me questions to turn this into a useful note: i bounced between the invoice and gallery bug.",
   "log a block from 2 to 3:15, but help me name what actually happened.",
+  "i've been doing email for 30 minutes.",
+  "i did email for 30 minutes.",
   "what do my notes this week suggest about when admin turns into avoidance?",
   "i feel like i did nothing today. can you read back the evidence from my blocks?",
   "turn this messy description into a note, and keep the uncertainty in it.",
@@ -318,11 +321,10 @@ export default async function DocsPage() {
                 where this is going
               </h2>
               <p className="mt-2 text-[14px] leading-[1.7] text-alibi-ink">
-                the next version should make alibi better at extracting compact structured evidence
-                from notes and companion threads. for block chats, that means keeping the selected
-                note available as context without loading unrelated history. after that, retrieval
-                can become useful: not generic memory, but source-backed patterns connected to dated
-                blocks.
+                alibi now has the first retrieval layer: SQL range context plus source-linked memory
+                chunks from blocks, notes, insights, and companion messages. the next version should
+                make that layer more reliable around timezone scopes, fallback filtering, and longer
+                notes while keeping every observation connected to dated evidence.
               </p>
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <RoadmapCard
@@ -334,8 +336,8 @@ export default async function DocsPage() {
                   body="extract small source-linked claims from notes and chat so every pattern can point back to what you wrote."
                 />
                 <RoadmapCard
-                  title="future rag"
-                  body="add retrieval only after the evidence model is stable enough to return cited, dated, trustworthy context."
+                  title="better retrieval"
+                  body="tighten source and date scoping so vector fallback never widens a question beyond the evidence the user asked for."
                 />
               </div>
             </section>

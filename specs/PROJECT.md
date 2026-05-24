@@ -98,6 +98,7 @@ V4 update — agent layer refresh (2026-05):
 - `analyseBlocks` is split into a fast-tier evidence synthesis step and a companion-tier voice rewrite step, so the large memory packet never pays companion-tier price;
 - the router prompt now performs draft-completion inline when a `Prior draft` is provided, and a skip-router heuristic bypasses the router entirely on short clarification answers — replacing the previous sequential router + clarifier call pair;
 - `lib/memory-context.ts` now holds a 5-minute in-process cache keyed by user + range label + limits; cache is skipped for the `today` scope and is invalidated from `app/actions/timer.ts` on every block write or delete via `invalidateMemoryContextForUser`;
+- `db/migrations/012_memory_chunks_rag.sql` plus `lib/rag/*` add the first vector RAG slice: chunking for time blocks, note versions, insights, and companion messages; OpenAI embeddings; Kysely-backed indexing/retrieval; and retrieval logs. Current review findings track portability and fallback-scope risks in this layer;
 - `anthropicCacheOptions` in `lib/ai.ts` wires Anthropic ephemeral prompt caching into the four companion call sites; only direct Anthropic profiles use it, since OpenRouter pass-through caching is inconsistent;
 - BYOK provider presets land at `lib/ai-provider-presets.ts` (DeepSeek, Qwen via DashScope, Zhipu GLM, Moonshot Kimi, plus OpenRouter Anthropic and DeepSeek convenience presets), surfaced as a quick-start picker in `components/ai-settings-form.tsx` that prefills the existing custom-key form;
 - `/app/docs` gains an "ai models, providers, and cost" section that documents the agent topology, defaults, deferred-insight behavior, two-tier analysis, prompt caching, and BYOK presets.
@@ -183,8 +184,8 @@ UI status:
 - `/app/calendar` includes Google Calendar connection and retry controls. Connected users get a separate Google `alibi` calendar, and completed blocks sync as app-created events.
 - `/app/settings` controls hosted/default versus custom AI provider mode, encrypted provider keys, saved-provider selection, provider-scoped fast/companion model choices, default-model reset, provider testing, active status display, disable, and key deletion.
 - Companion chat includes push-to-talk voice input and optional Cartesia TTS playback controls.
-- `/app/docs` is now a wiki-style guide explaining what Alibi is, how the evidence model works, how to write useful notes, how to use general and block-specific companion chat, and where the V3/RAG direction is going.
-- `/` now describes the notes-first product, existing feature set, and future RAG ambition instead of embedding a fake chat demo.
+- `/app/docs` is now a wiki-style guide explaining what Alibi is, how the evidence model works, how to write useful notes, how to use general and block-specific companion chat, and how the current SQL plus vector retrieval layer fits the product.
+- `/` now describes the notes-first product, existing feature set, semantic chat logging, and initial source-backed retrieval layer instead of embedding a fake chat demo.
 - `/demo` provides an unauthenticated localStorage-backed workspace with tracker/chat and dashboard views, timer, manual blocks, custom categories, block-specific threads, edit/delete, latest-block resume, note/chat insights, and a sign-up CTA.
 - Demo companion and insight server actions use OpenRouter over trimmed local snapshots and return local operations only; demo records remain browser-local and are never written to Supabase.
 - The demo can use visitor-provided OpenAI-compatible or Anthropic endpoint settings from a local AI panel, or the hosted `OPENROUTER_DEMO_API_KEY` / demo model env vars, before falling back to the main OpenRouter configuration.
@@ -196,8 +197,8 @@ UI status:
 Verification:
 
 - `npm run build` passes after the integrations slice. Next.js still warns about multiple lockfiles and inferred workspace root.
-- `npm run test:unit` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, block draft utilities, secret encryption, and AI provider validation (Vitest).
-- Playwright E2E skeleton exists at `tests/e2e/demo.test.ts`; integration tests for server actions are not yet implemented.
+- `npm run test:unit` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, block draft utilities, process-message semantic duration integration, secret encryption, and AI provider validation (Vitest).
+- Playwright E2E skeleton exists at `tests/e2e/demo.test.ts`; broader server-action integration tests are not yet implemented.
 - Hosted schema was checked through Supabase REST table/column probes.
 - Authenticated browser QA is still needed for note-save, note-edit insight regeneration, custom category creation, chat logging, chat analysis, dashboard display, Google OAuth, calendar event sync, BYOK key testing, and Cartesia voice behavior.
 
@@ -234,11 +235,10 @@ Known working principle:
 - Category inference is allowed and desirable for low-friction logging. The remaining requirement is avoiding misleading structure when category evidence is absent or ambiguous, and keeping inferred categories user-editable after save.
 - `getDayRange` is not timezone-safe: server-side "today" uses server local time instead of the user's IANA timezone (see REVIEW.md Finding 2).
 - Project-level tracking and break overlays are still roadmap-only. The current plan is documented in [FUTURE-ROADMAP-projects-breaks.md](./FUTURE-ROADMAP-projects-breaks.md).
-- Integration tests for `app/actions/timer.ts` and `app/actions/process-message.ts` are not yet written.
+- `processCompanionMessage` now has focused server-action integration coverage for semantic duration routing. Broader server-action integration tests for `app/actions/timer.ts` and non-duration companion flows are not yet written.
 - Playwright E2E tests are a skeleton only; the timer flow and manual block entry tests need selectors confirmed against the live `/demo` UI.
 - Long notes in block-specific companion context need a cached summary/excerpt strategy before notes become large enough to create token pressure.
-- Memory context is v1 SQL range retrieval only. It is not yet embeddings, semantic search, long-term summarization, or provider-native assistant memory.
-- RAG is not implemented yet. The project first needs cleaner source records, evidence pointers, and a retrieval/chunk layer.
+- Memory context now has both SQL range retrieval and an initial vector RAG chunk/retrieval layer. It is not yet long-term summarization or provider-native assistant memory, and review findings still track RAG portability, fallback scoping, and `OPENAI_API_KEY` setup/documentation gaps.
 - Agentic database evolution is not implemented. Future work should let the agent propose schema changes, not mutate production schema directly.
 - Demo AI still needs browser QA for rate/latency behavior and operation accuracy under messy inputs.
 - Database portability is only partially implemented. Any authenticated route/action already migrated to repositories now requires `DATABASE_URL`; timer, companion, and insight write paths still depend on Supabase app-data tables.
@@ -347,7 +347,7 @@ Known working principle:
 3. Stop it and add a nuanced note about what actually happened.
 4. Edit the note later; the prior version is preserved and insight rows refresh.
 5. Add a manual block with a new custom category.
-6. Ask chat to log a completed block; it asks for missing task/time before saving when completed-work timing is incomplete.
+6. Ask chat to log a completed block with only a duration; completed-work intent saves the immediately preceding duration ending now, while missing task/category details still clarify as needed.
 7. Ask chat "i've been doing email for 30 minutes"; it starts an open timer backdated by 30 minutes and infers the category when the content is clear.
 8. Ask "what patterns do you see today?" and get a note-grounded response.
 9. Open `/app/dashboard` and see evidence-backed notes mirror observations.

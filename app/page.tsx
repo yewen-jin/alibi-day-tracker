@@ -41,7 +41,7 @@ const FEATURES: Feature[] = [
   {
     icon: MessageCircleQuestion,
     title: "chat as reconstruction",
-    body: "use chat to start or stop the timer, log completed work, ask for missing details, or help turn a messy memory into a better note.",
+    body: "use chat to start or stop the timer, log completed work from natural duration language, ask for missing details, or turn a messy memory into a better note.",
   },
   {
     icon: CalendarRange,
@@ -60,8 +60,8 @@ const FEATURES: Feature[] = [
   },
   {
     icon: Network,
-    title: "future RAG experiment",
-    body: "the ambition is source-backed retrieval: patterns and answers that cite dated blocks, note excerpts, chat turns, and evidence items.",
+    title: "source-backed retrieval",
+    body: "the first RAG layer indexes blocks, note versions, insights, and chat turns so answers can stay tied to dated evidence.",
   },
   {
     icon: Lock,
@@ -167,7 +167,7 @@ export default function LandingPage() {
             <PromiseRow
               icon={Network}
               title="retrieve"
-              body="future RAG work will search source-backed chunks instead of inventing vague summaries."
+              body="the first RAG layer searches source-backed chunks instead of leaning on vague summaries."
             />
           </div>
         </section>
@@ -180,9 +180,9 @@ export default function LandingPage() {
             a complete record, not a clean fiction
           </h2>
           <p className="mt-3 text-[14px] leading-6 text-alibi-teal">
-            The current app already supports timer tracking, manual blocks, editable notes, custom
-            categories, chat logging, dashboard summaries, and note-derived insights. The larger
-            experiment is to turn that record into a trustworthy retrieval system for work patterns.
+            The current app supports timer tracking, manual blocks, editable notes, custom
+            categories, semantic chat logging, dashboard summaries, note-derived insights, calendar
+            sync, BYOK settings, voice capture, and an initial source-backed retrieval layer.
           </p>
         </header>
 
@@ -200,10 +200,9 @@ export default function LandingPage() {
             built as a RAG experiment, but grounded in the product first
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-[14px] leading-7 text-alibi-ink">
-            RAG only becomes useful when the source material is clean. Alibi's first job is to
-            preserve dated notes, chat context, and derived evidence. The next job is retrieval that
-            can answer questions like "when does admin become avoidance?" with citations back to
-            actual blocks.
+            RAG only becomes useful when the source material is clean. Alibi preserves dated notes,
+            chat context, and derived evidence first, then retrieves source-backed chunks to answer
+            questions like "when does admin become avoidance?" with pointers back to actual blocks.
           </p>
           <Link
             href="/demo"
