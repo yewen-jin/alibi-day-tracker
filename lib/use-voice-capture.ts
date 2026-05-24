@@ -90,6 +90,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
   const stopWatchdogRef = useRef<number | null>(null);
   const stopRequestedRef = useRef(false);
   const maxAudioLevelRef = useRef(0);
+  const analysisStreamRef = useRef<MediaStream | null>(null);
   const telemetryRef = useRef<VoiceTelemetrySession | null>(null);
   const lastEventsRef = useRef<VoiceTelemetryEvent[]>([]);
 
@@ -121,6 +122,18 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
     analyserRef.current = null;
     if (mountedRef.current) {
       setAudioLevel(0);
+    }
+
+    const analysisStream = analysisStreamRef.current;
+    analysisStreamRef.current = null;
+    if (analysisStream) {
+      analysisStream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // ignore — already stopped
+        }
+      });
     }
 
     const audioContext = audioContextRef.current;
@@ -284,12 +297,6 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
   );
 
   const startAudioAnalysis = useCallback((stream: MediaStream) => {
-    // On iOS Safari, attaching a MediaStreamAudioSource to the same MediaStream
-    // that a MediaRecorder is consuming silently steals the audio data — the
-    // recorder produces zero-byte chunks. On other Safari builds we clone the
-    // stream defensively. Other browsers can share the original stream.
-    if (detectIsIos()) return;
-
     const AudioContextConstructor =
       window.AudioContext ||
       (window as typeof window & { webkitAudioContext?: typeof AudioContext })
@@ -297,14 +304,29 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
 
     if (!AudioContextConstructor) return;
 
-    let analysisStream: MediaStream | null = null;
+    // On Safari (desktop and iOS), attaching a MediaStreamAudioSource to the
+    // same MediaStream that a MediaRecorder is consuming silently steals the
+    // audio — the recorder produces zero-byte chunks. Clone the track for the
+    // analyser so the recorder keeps the original. Other browsers can share.
+    const needsClone = detectIsSafari() || detectIsIos();
+    let analysisStream: MediaStream;
+    let clonedForAnalysis = false;
     try {
-      analysisStream = detectIsSafari()
-        ? new MediaStream(stream.getAudioTracks().map((track) => track.clone()))
-        : stream;
+      if (needsClone) {
+        analysisStream = new MediaStream(
+          stream.getAudioTracks().map((track) => track.clone()),
+        );
+        clonedForAnalysis = true;
+      } else {
+        analysisStream = stream;
+      }
     } catch {
       analysisStream = stream;
+      clonedForAnalysis = false;
     }
+    // Only keep a ref to the cloned stream — we must never stop the recorder's
+    // original stream from inside stopAudioAnalysis.
+    analysisStreamRef.current = clonedForAnalysis ? analysisStream : null;
 
     let audioContext: AudioContext;
     try {
