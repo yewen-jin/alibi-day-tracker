@@ -10,6 +10,7 @@ function createSupabaseMemory() {
     companion_conversations: [],
     companion_messages: [],
     companion_drafts: [],
+    time_blocks: [],
   };
   let sequence = 0;
 
@@ -365,5 +366,56 @@ describe("processCompanionMessage semantic duration flows", () => {
       task_name: "something",
       duration_minutes: 30,
     });
+  });
+
+  it("updates the attached time block from its companion thread", async () => {
+    const { processCompanionMessage, saveBlock, memory } = await loadProcessMessage(
+      draft({
+        intent: "edit_block",
+        task_name: "giffgaff customer service",
+        category: "admin",
+        started_at: "2026-05-24T13:00:00.000Z",
+      }),
+    );
+    memory.state.time_blocks.push({
+      id: "block-1",
+      user_id: "user-1",
+      task_name: "giffgaff",
+      category: "admin",
+      category_id: "category-1",
+      hashtags: [],
+      notes: "on hold",
+      started_at: "2026-05-24T12:00:00.000Z",
+      ended_at: "2026-05-24T14:00:00.000Z",
+      duration_seconds: 7200,
+      mood: null,
+      effort_level: null,
+      satisfaction: null,
+      avoidance_marker: false,
+      hyperfocus_marker: false,
+      guilt_marker: false,
+      novelty_marker: false,
+      created_at: "2026-05-24T12:00:00.000Z",
+      updated_at: "2026-05-24T14:00:00.000Z",
+    });
+
+    const result = await processCompanionMessage({
+      text: "rename it giffgaff customer service and make the start 2pm",
+      relatedTimeBlockId: "block-1",
+      timezone: "Europe/London",
+    });
+
+    expect(result.type).toBe("logged");
+    expect(saveBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "block-1",
+        task_name: "giffgaff customer service",
+        category: "admin",
+        category_id: "category-1",
+        started_at: "2026-05-24T13:00:00.000Z",
+        ended_at: "2026-05-24T14:00:00.000Z",
+        note_source: "chat",
+      }),
+    );
   });
 });
