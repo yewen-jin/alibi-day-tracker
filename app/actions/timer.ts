@@ -36,6 +36,7 @@ import type {
   ResumeBlockResult,
   SaveBlockInput,
   SaveBlockResult,
+  StartTimerInput,
   StopTimerInput,
   StartTimerResult,
   StopTimerResult,
@@ -300,6 +301,111 @@ function validateStopTimerInput(input: StopTimerInput | undefined):
     hyperfocusMarker: input.hyperfocus_marker === true,
     guiltMarker: input.guilt_marker === true,
     noveltyMarker: input.novelty_marker === true,
+  }
+}
+
+function validateStartTimerInput(input: StartTimerInput | undefined):
+  | {
+      type: "valid"
+      startedAt: string
+      taskName: string | null
+      category: TimeBlockCategory | null
+      categoryId: string | null
+      hashtags: string[]
+      notes: string | null
+      mood: Mood | null
+      effortLevel: EffortLevel | null
+      satisfaction: Satisfaction | null
+      avoidanceMarker: boolean
+      hyperfocusMarker: boolean
+      guiltMarker: boolean
+      noveltyMarker: boolean
+      shouldCreateOpenBlock: boolean
+    }
+  | {
+      type: "error"
+      message: string
+    } {
+  if (input === undefined) {
+    return {
+      type: "valid",
+      startedAt: new Date().toISOString(),
+      taskName: null,
+      category: null,
+      categoryId: null,
+      hashtags: [],
+      notes: null,
+      mood: null,
+      effortLevel: null,
+      satisfaction: null,
+      avoidanceMarker: false,
+      hyperfocusMarker: false,
+      guiltMarker: false,
+      noveltyMarker: false,
+      shouldCreateOpenBlock: false,
+    }
+  }
+
+  if (!input || typeof input !== "object") {
+    return { type: "error", message: "timer details are invalid." }
+  }
+
+  if (input.hashtags !== undefined && !Array.isArray(input.hashtags)) {
+    return { type: "error", message: "hashtags are invalid." }
+  }
+
+  const startedAt = input.started_at ? parseBlockDate(input.started_at) : new Date()
+
+  if (!startedAt) {
+    return { type: "error", message: "timer start time must be a valid date." }
+  }
+
+  if (startedAt.getTime() > Date.now() + 5_000) {
+    return { type: "error", message: "timer start time can't be in the future." }
+  }
+
+  if (input.category !== null && input.category !== undefined && !isValidCategorySlug(input.category)) {
+    return { type: "error", message: "category is invalid." }
+  }
+
+  if (input.category_id !== null && input.category_id !== undefined && !isValidUuid(input.category_id)) {
+    return { type: "error", message: "category is invalid." }
+  }
+
+  const taskName = typeof input.task_name === "string" ? input.task_name.trim() : null
+  const notes = input.notes?.trim() || null
+  const hashtags = normalizeHashtags(input.hashtags)
+  const shouldCreateOpenBlock = Boolean(
+    taskName ||
+      input.category ||
+      input.category_id ||
+      hashtags.length > 0 ||
+      notes ||
+      input.mood ||
+      input.effort_level ||
+      input.satisfaction ||
+      input.avoidance_marker ||
+      input.hyperfocus_marker ||
+      input.guilt_marker ||
+      input.novelty_marker,
+  )
+
+  return {
+    type: "valid",
+    startedAt: startedAt.toISOString(),
+    taskName: taskName || null,
+    category: input.category ?? null,
+    categoryId: input.category_id ?? null,
+    hashtags,
+    notes,
+    mood: isMood(input.mood) ? input.mood : null,
+    effortLevel: isEffortLevel(input.effort_level) ? input.effort_level : null,
+    satisfaction: isSatisfaction(input.satisfaction) ? input.satisfaction : null,
+    avoidanceMarker: input.avoidance_marker === true,
+    hyperfocusMarker: input.hyperfocus_marker === true,
+    guiltMarker: input.guilt_marker === true,
+    noveltyMarker: input.novelty_marker === true,
+    shouldCreateOpenBlock,
   }
 }
 
@@ -745,10 +851,64 @@ export async function getActiveTimer(): Promise<GetActiveTimerResult> {
   }
 }
 
+export async function getActiveTimerBlock(): Promise<
+  | {
+      type: "loaded"
+      timeBlock: TimeBlock | null
+    }
+  | {
+      type: "error"
+      message: string
+    }
+> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { type: "error", message: "not signed in." }
+  }
+
+  const { data: activeTimer, error: timerError } = await supabase
+    .from("active_timer")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (timerError) {
+    return { type: "error", message: "couldn't load the timer. try again." }
+  }
+
+  if (!activeTimer) {
+    return { type: "loaded", timeBlock: null }
+  }
+
+  const { data: timeBlock, error } = await supabase
+    .from("time_blocks")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("started_at", (activeTimer as ActiveTimer).started_at)
+    .is("ended_at", null)
+    .maybeSingle()
+
+  if (error) {
+    return { type: "error", message: "couldn't load timer details. try again." }
+  }
+
+  return { type: "loaded", timeBlock: (timeBlock as TimeBlock | null) ?? null }
+}
+
 /**
  * Start the current user's timer without overwriting an existing running timer.
  */
-export async function startTimer(): Promise<StartTimerResult> {
+export async function startTimer(input?: StartTimerInput): Promise<StartTimerResult> {
+  const validatedInput = validateStartTimerInput(input)
+
+  if (validatedInput.type === "error") {
+    return validatedInput
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -779,7 +939,7 @@ export async function startTimer(): Promise<StartTimerResult> {
     .from("active_timer")
     .insert({
       user_id: user.id,
-      started_at: new Date().toISOString(),
+      started_at: validatedInput.startedAt,
     })
     .select("*")
     .single()
@@ -801,6 +961,46 @@ export async function startTimer(): Promise<StartTimerResult> {
     }
 
     return { type: "error", message: "couldn't start the timer. try again." }
+  }
+
+  if (validatedInput.shouldCreateOpenBlock) {
+    const resolvedCategory = validatedInput.category
+      ? await ensureCategoryForUser(
+          supabase,
+          user.id,
+          validatedInput.category,
+          validatedInput.categoryId,
+        )
+      : { category: null, categoryId: null }
+    const derivedMarkers = deriveMarkersFromNotes(validatedInput.notes)
+
+    const { error: blockError } = await supabase.from("time_blocks").insert({
+      user_id: user.id,
+      started_at: validatedInput.startedAt,
+      ended_at: null,
+      task_name: validatedInput.taskName,
+      category: resolvedCategory.category,
+      category_id: resolvedCategory.categoryId,
+      hashtags: validatedInput.hashtags,
+      notes: validatedInput.notes,
+      mood: validatedInput.mood,
+      effort_level: validatedInput.effortLevel,
+      satisfaction: validatedInput.satisfaction,
+      avoidance_marker: validatedInput.avoidanceMarker || derivedMarkers.avoidance,
+      hyperfocus_marker: validatedInput.hyperfocusMarker || derivedMarkers.hyperfocus,
+      guilt_marker: validatedInput.guiltMarker || derivedMarkers.guilt,
+      novelty_marker: validatedInput.noveltyMarker,
+    })
+
+    if (blockError) {
+      await supabase
+        .from("active_timer")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("started_at", validatedInput.startedAt)
+
+      return { type: "error", message: "couldn't attach details to the timer. try again." }
+    }
   }
 
   return {
@@ -1105,6 +1305,127 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
   return {
     type: "stopped",
     timeBlock,
+  }
+}
+
+/**
+ * Save editable details on the currently running timer without changing its
+ * start time or stopping it. Details are stored on the open time block that
+ * stopTimer later completes.
+ */
+export async function saveActiveTimerDetails(input: StopTimerInput): Promise<SaveBlockResult> {
+  const validatedInput = validateStopTimerInput(input)
+
+  if (validatedInput.type === "error") {
+    return validatedInput
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { type: "error", message: "not signed in." }
+  }
+
+  const { data: activeTimer, error: timerError } = await supabase
+    .from("active_timer")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (timerError) {
+    return { type: "error", message: "couldn't check the timer. try again." }
+  }
+
+  if (!activeTimer) {
+    return { type: "not_found" }
+  }
+
+  const startedAt = new Date(activeTimer.started_at)
+
+  if (Number.isNaN(startedAt.getTime()) || startedAt.getTime() > Date.now() + 5_000) {
+    return { type: "error", message: "timer has an invalid start time." }
+  }
+
+  const resolvedCategory = validatedInput.category
+    ? await ensureCategoryForUser(
+        supabase,
+        user.id,
+        validatedInput.category,
+        validatedInput.categoryId,
+      )
+    : { category: null, categoryId: null }
+  const derivedMarkers = deriveMarkersFromNotes(validatedInput.notes)
+  const values = {
+    user_id: user.id,
+    started_at: activeTimer.started_at,
+    ended_at: null,
+    task_name: validatedInput.taskName,
+    category: resolvedCategory.category,
+    category_id: resolvedCategory.categoryId,
+    hashtags: validatedInput.hashtags,
+    notes: validatedInput.notes,
+    mood: validatedInput.mood,
+    effort_level: validatedInput.effortLevel,
+    satisfaction: validatedInput.satisfaction,
+    avoidance_marker: validatedInput.avoidanceMarker || derivedMarkers.avoidance,
+    hyperfocus_marker: validatedInput.hyperfocusMarker || derivedMarkers.hyperfocus,
+    guilt_marker: validatedInput.guiltMarker || derivedMarkers.guilt,
+    novelty_marker: validatedInput.noveltyMarker,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data: openBlock, error: openBlockError } = await supabase
+    .from("time_blocks")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("started_at", activeTimer.started_at)
+    .is("ended_at", null)
+    .maybeSingle()
+
+  if (openBlockError) {
+    return { type: "error", message: "couldn't check the running block. try again." }
+  }
+
+  const previousNotes = (openBlock as TimeBlock | null)?.notes ?? null
+  const query = openBlock
+    ? supabase
+        .from("time_blocks")
+        .update(values)
+        .eq("id", (openBlock as TimeBlock).id)
+        .eq("user_id", user.id)
+        .select("*")
+        .single()
+    : supabase
+        .from("time_blocks")
+        .insert({
+          ...values,
+          created_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single()
+  const { data: timeBlock, error } = await query
+
+  if (error || !timeBlock) {
+    return { type: "error", message: "couldn't save timer details. try again." }
+  }
+
+  await preserveNotesAndInsights(
+    supabase,
+    user.id,
+    timeBlock as TimeBlock,
+    previousNotes,
+    noteSourceFromInput(input.note_source),
+  )
+  indexTimeBlockAfterResponse(timeBlock as TimeBlock)
+  revalidatePath("/app")
+  invalidateMemoryContextForUser(user.id)
+
+  return {
+    type: "saved",
+    timeBlock: timeBlock as TimeBlock,
   }
 }
 

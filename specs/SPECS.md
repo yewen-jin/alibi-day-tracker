@@ -120,8 +120,9 @@ Required behavior for block-specific companion threads:
 
 The agent should use semantic intent, not a flat duration parser:
 
-- "i started X 30 minutes ago" and "i've been doing X for 30 minutes" mean the user is still doing it. The agent may start an open timer with `started_at` backdated by 30 minutes and leave `ended_at` unset.
-- "i did X for 30 minutes", "i spent 30 minutes on X", and "log X for 30 minutes" describe completed work. If the user gives only duration and no start or end anchor, the agent should clarify when it happened before saving a completed time block.
+- Ongoing-work intent with a duration, such as "i started X 30 minutes ago" or "i've been doing X for 30 minutes", means the user is still doing it. The agent may start an open timer with `started_at` backdated by the duration and leave `ended_at` unset.
+- Completed-work logging intent with a duration and no explicit start or end anchor means the work ended now. The agent should save a completed block covering the duration immediately before now.
+- This rule is semantic and language-independent. It should rely on model-deciphered intent and extracted duration, not hard-coded English trigger phrases.
 - "i worked on X from 2 to 2:30" or "i finished X at 3 after 30 minutes" gives enough timing information to save a completed block.
 
 The agent may infer category from the content of the input to reduce logging friction. Inferred categories are acceptable as long as they remain user-editable after save and the agent does not claim the user explicitly chose a category they did not provide. The agent should ask only when the category is missing or ambiguous enough that saving would create misleading structure.
@@ -199,7 +200,7 @@ Insight generation must use sources in this order:
 
 ### Current Context Layer
 
-The first companion memory layer is SQL-backed retrieval over the existing user-owned tables. It is not provider-native model memory and not yet vector RAG.
+The first companion memory layer combines SQL range retrieval over existing user-owned tables with an initial vector RAG layer over indexed memory chunks. It is not provider-native model memory and does not replace raw user-authored evidence.
 
 The context builder may retrieve:
 
@@ -207,7 +208,10 @@ The context builder may retrieve:
 - `time_block_insights` for those blocks;
 - `companion_messages` linked to those blocks;
 - `companion_message_insights` from the same range;
+- indexed `memory_chunks` from time blocks, note versions, block insights, companion messages, and companion message insights;
 - the most recent visible thread messages.
+
+Vector retrieval must preserve source and date constraints when a query asks for a specific period or evidence type. Fallback retrieval must not silently widen a user-requested date/source scope.
 
 Default scope is today. User language can expand context to yesterday, the last few days, week, or month. A complete time-block draft uses its explicit start/end window. This retrieval policy can interpret the user's analysis question, but it must not become a manual parser that writes time blocks.
 
@@ -230,6 +234,8 @@ Default scope is today. User language can expand context to yesterday, the last 
 `companion_message_insights` stores derived interpretations from user-authored chat messages: actions they said they did, intentions, avoided or deferred items, friction, emotional language, useful drift, mismatch language, themes, and a source excerpt. It supports the dashboard chat mirror without forcing general chat into time blocks.
 
 `companion_drafts` stores temporary clarification state for the general companion thread when the agent needs more information before writing a valid time block.
+
+`memory_chunks` and `rag_retrieval_logs` support the initial vector retrieval layer. They store source-linked chunks, embedding status/errors, chunk metadata, and retrieval diagnostics. The portable database path should keep these tables aligned with `app_users` ownership instead of introducing a separate identity model.
 
 `user_secret_keys` stores encrypted secrets such as user AI provider keys and Google refresh tokens. The client must only receive masked previews.
 
@@ -338,5 +344,5 @@ The qualitative pattern engine is working when:
 - timer, manual entry, and chat all write the same time-block data model;
 - dashboard and chat analysis prioritize note evidence;
 - observations can point back to dated, timed source material;
-- future RAG work has clean source records to retrieve from.
+- retrieval has clean source records and indexed memory chunks to retrieve from.
 - integration features are consented, inspectable, revocable, and scoped to the minimum data needed.

@@ -27,6 +27,9 @@ import {
 import { VoiceCaptureStatusRow } from "@/components/voice-capture-status";
 import type {
   CompanionMessage,
+  EffortLevel,
+  Mood,
+  Satisfaction,
   TimeBlock,
   TimeBlockCategory,
   TimeBlockCategoryRecord,
@@ -55,6 +58,13 @@ export type EditorState = {
   notes: string;
   startedAt: string;
   endedAt: string;
+  mood: Mood | "";
+  effortLevel: EffortLevel | "";
+  satisfaction: Satisfaction | "";
+  avoidanceMarker: boolean;
+  hyperfocusMarker: boolean;
+  guiltMarker: boolean;
+  noveltyMarker: boolean;
 };
 
 export type ChatMessage = {
@@ -68,6 +78,14 @@ export function createEditorState(
   block: TimeBlock,
   isNewlyStopped = false,
 ): EditorState {
+  const startedAt = toDateTimeLocal(block.started_at);
+  let endedAt = toDateTimeLocal(block.ended_at);
+  if (isNewlyStopped && startedAt && startedAt === endedAt) {
+    endedAt = toDateTimeLocal(
+      new Date(new Date(block.ended_at ?? block.started_at).getTime() + 1000).toISOString(),
+    );
+  }
+
   return {
     block,
     isNewlyStopped,
@@ -76,8 +94,15 @@ export function createEditorState(
     category: block.category ?? "",
     hashtags: (block.hashtags ?? []).join(" "),
     notes: block.notes ?? "",
-    startedAt: toDateTimeLocal(block.started_at),
-    endedAt: toDateTimeLocal(block.ended_at),
+    startedAt,
+    endedAt,
+    mood: block.mood ?? "",
+    effortLevel: block.effort_level ?? "",
+    satisfaction: block.satisfaction ?? "",
+    avoidanceMarker: block.avoidance_marker,
+    hyperfocusMarker: block.hyperfocus_marker,
+    guiltMarker: block.guilt_marker,
+    noveltyMarker: block.novelty_marker,
   };
 }
 
@@ -94,6 +119,13 @@ export function createManualEditorState(): EditorState {
     notes: "",
     startedAt: toDateTimeLocal(startedAt.toISOString()),
     endedAt: toDateTimeLocal(endedAt.toISOString()),
+    mood: "",
+    effortLevel: "",
+    satisfaction: "",
+    avoidanceMarker: false,
+    hyperfocusMarker: false,
+    guiltMarker: false,
+    noveltyMarker: false,
   };
 }
 
@@ -132,6 +164,8 @@ export function CompanionChatPanel({
   onOpenGeneral,
   onSubmit,
   onClose,
+  voiceFileName = "alibi-voice.webm",
+  voiceMode = "authenticated",
 }: {
   threadKind: "general" | "time_block";
   threadTitle: string | null;
@@ -140,6 +174,8 @@ export function CompanionChatPanel({
   onOpenGeneral: () => Promise<void>;
   onSubmit: (text: string) => Promise<void>;
   onClose?: () => void;
+  voiceFileName?: string;
+  voiceMode?: "authenticated" | "demo";
 }) {
   const [value, setValue] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -160,7 +196,7 @@ export function CompanionChatPanel({
     stopRecording,
     resetVoiceState,
     getRecentEvents: getRecentVoiceEvents,
-  } = useVoiceCapture({ fileName: "alibi-voice.webm" });
+  } = useVoiceCapture({ fileName: voiceFileName, mode: voiceMode });
   const recording = voiceStatus === "recording";
   const voiceBusy =
     voiceStatus === "requesting" ||
@@ -230,7 +266,7 @@ export function CompanionChatPanel({
       const response = await fetch("/api/cartesia/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, mode: voiceMode }),
       });
 
       if (!response.ok) {
@@ -554,6 +590,110 @@ function CategoryPicker({
   );
 }
 
+function BlockMetadataFields({
+  editor,
+  setEditor,
+}: {
+  editor: EditorState;
+  setEditor: (editor: EditorState) => void;
+}) {
+  const markerOptions = [
+    ["avoidanceMarker", "avoidance"],
+    ["hyperfocusMarker", "hyperfocus"],
+    ["guiltMarker", "guilt"],
+    ["noveltyMarker", "novelty"],
+  ] as const;
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
+          mood
+          <select
+            value={editor.mood}
+            onChange={(event) =>
+              setEditor({ ...editor, mood: event.target.value as Mood | "" })
+            }
+            className="alibi-input h-11"
+          >
+            <option value="">unset</option>
+            <option value="joyful">joyful</option>
+            <option value="neutral">neutral</option>
+            <option value="flat">flat</option>
+            <option value="anxious">anxious</option>
+            <option value="guilty">guilty</option>
+            <option value="proud">proud</option>
+          </select>
+        </label>
+
+        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
+          effort
+          <select
+            value={editor.effortLevel}
+            onChange={(event) =>
+              setEditor({
+                ...editor,
+                effortLevel: event.target.value as EffortLevel | "",
+              })
+            }
+            className="alibi-input h-11"
+          >
+            <option value="">unset</option>
+            <option value="easy">easy</option>
+            <option value="medium">medium</option>
+            <option value="hard">hard</option>
+            <option value="grind">grind</option>
+          </select>
+        </label>
+
+        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
+          satisfaction
+          <select
+            value={editor.satisfaction}
+            onChange={(event) =>
+              setEditor({
+                ...editor,
+                satisfaction: event.target.value as Satisfaction | "",
+              })
+            }
+            className="alibi-input h-11"
+          >
+            <option value="">unset</option>
+            <option value="satisfied">satisfied</option>
+            <option value="mixed">mixed</option>
+            <option value="frustrated">frustrated</option>
+            <option value="unclear">unclear</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {markerOptions.map(([key, label]) => (
+          <label
+            key={key}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-black transition",
+              editor[key]
+                ? "border-alibi-blue bg-alibi-blue text-white"
+                : "border-alibi-lavender/40 bg-white text-alibi-teal",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={editor[key]}
+              onChange={(event) =>
+                setEditor({ ...editor, [key]: event.target.checked })
+              }
+              className="sr-only"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function BlockEditor({
   editor,
   categories,
@@ -671,6 +811,8 @@ export function BlockEditor({
             placeholder="what you did, what got in the way, how it felt, what changed, what you noticed"
           />
         </label>
+
+        <BlockMetadataFields editor={editor} setEditor={setEditor} />
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -852,6 +994,7 @@ export function DailyBlocks({
   onDelete,
   onResume,
   onChatAbout,
+  onOpenCalendar,
   pending,
 }: {
   date: Date;
@@ -864,6 +1007,7 @@ export function DailyBlocks({
   onDelete: (block: TimeBlock) => void;
   onResume: (block: TimeBlock) => void;
   onChatAbout: (block: TimeBlock) => void;
+  onOpenCalendar?: () => void;
   pending: boolean;
 }) {
   const categoryMap = useMemo(() => createCategoryMetaMap(categories), [
@@ -892,14 +1036,26 @@ export function DailyBlocks({
           >
             <Plus className="h-4 w-4" />
           </button>
-          <Link
-            href="/app/calendar"
-            aria-label="open calendar"
-            title="calendar"
-            className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
-          >
-            <CalendarDays className="h-4 w-4" />
-          </Link>
+          {onOpenCalendar ? (
+            <button
+              type="button"
+              onClick={onOpenCalendar}
+              aria-label="open calendar"
+              title="calendar"
+              className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
+            >
+              <CalendarDays className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              href="/app/calendar"
+              aria-label="open calendar"
+              title="calendar"
+              className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
+            >
+              <CalendarDays className="h-4 w-4" />
+            </Link>
+          )}
         </div>
       </div>
 

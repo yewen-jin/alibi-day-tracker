@@ -18,6 +18,7 @@ export type VoiceCaptureStatus =
 
 type VoiceCaptureOptions = {
   fileName?: string;
+  mode?: "authenticated" | "demo";
 };
 
 const TRANSCRIPTION_TIMEOUT_MS = 30_000;
@@ -71,6 +72,7 @@ function audioFileName(baseName: string, mimeType: string) {
 
 export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
   const fileName = options.fileName ?? "alibi-voice.webm";
+  const mode = options.mode ?? "authenticated";
   const [status, setStatus] = useState<VoiceCaptureStatus>("idle");
   const [durationMs, setDurationMs] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -206,6 +208,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
         "file",
         new File([blob], uploadName, { type: uploadType }),
       );
+      formData.set("mode", mode);
       const controller = new AbortController();
       const timeout = window.setTimeout(() => {
         controller.abort();
@@ -293,7 +296,7 @@ export function useVoiceCapture(options: VoiceCaptureOptions = {}) {
         window.clearTimeout(timeout);
       }
     },
-    [fileName, finalizeTelemetry, reportUserFacingError],
+    [fileName, mode, finalizeTelemetry, reportUserFacingError],
   );
 
   const startAudioAnalysis = useCallback((stream: MediaStream) => {

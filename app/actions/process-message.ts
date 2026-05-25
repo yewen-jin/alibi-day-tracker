@@ -45,6 +45,7 @@ import type {
   Mood,
   Satisfaction,
   SaveBlockInput,
+  StartTimerInput,
   TimeBlock,
   TimeBlockCategory,
 } from "@/lib/types";
@@ -90,6 +91,7 @@ const routerSchema = companionDraftSchema.extend({
   intent: z.enum([
     "companion_chat",
     "log_block",
+    "edit_block",
     "start_timer",
     "stop_timer",
     "analyse_blocks",
@@ -152,6 +154,7 @@ export type ProcessCompanionMessageResult = (
 type RouterIntent =
   | "companion_chat"
   | "log_block"
+  | "edit_block"
   | "start_timer"
   | "stop_timer"
   | "analyse_blocks"
@@ -280,6 +283,7 @@ function normalizeRouterOutput(
   const intent = parsed?.intent;
   const normalizedIntent: RouterIntent =
     intent === "companion_chat" ||
+    intent === "edit_block" ||
     intent === "start_timer" ||
     intent === "stop_timer" ||
     intent === "analyse_blocks" ||
@@ -326,6 +330,119 @@ function draftToSaveInput(
     category,
     started_at: window.startedAt,
     ended_at: window.endedAt,
+    hashtags: draft.hashtags,
+    notes: draft.notes,
+    mood: draft.mood,
+    effort_level: draft.effort_level,
+    satisfaction: draft.satisfaction,
+    avoidance_marker: draft.avoidance_marker,
+    hyperfocus_marker: draft.hyperfocus_marker,
+    guilt_marker: draft.guilt_marker,
+    novelty_marker: draft.novelty_marker,
+  };
+}
+
+function draftFromTimeBlock(block: TimeBlock | CompanionTimeBlockContext): CompanionDraft {
+  return {
+    task_name: block.task_name,
+    category: block.category,
+    hashtags: block.hashtags ?? [],
+    notes: block.notes,
+    started_at: block.started_at,
+    ended_at: block.ended_at,
+    duration_minutes:
+      typeof block.duration_seconds === "number"
+        ? Math.round(block.duration_seconds / 60)
+        : null,
+    mood: block.mood,
+    effort_level: block.effort_level,
+    satisfaction: block.satisfaction,
+    avoidance_marker: block.avoidance_marker,
+    hyperfocus_marker: block.hyperfocus_marker,
+    guilt_marker: block.guilt_marker,
+    novelty_marker: block.novelty_marker,
+  };
+}
+
+function draftHasBlockEdit(draft: CompanionDraft) {
+  return Boolean(
+    draft.task_name?.trim() ||
+      draft.category ||
+      draft.hashtags.length > 0 ||
+      draft.notes?.trim() ||
+      draft.started_at ||
+      draft.ended_at ||
+      draft.duration_minutes ||
+      draft.mood ||
+      draft.effort_level ||
+      draft.satisfaction ||
+      draft.avoidance_marker ||
+      draft.hyperfocus_marker ||
+      draft.guilt_marker ||
+      draft.novelty_marker,
+  );
+}
+
+function deriveEditWindow(base: CompanionDraft, edit: CompanionDraft) {
+  if (edit.duration_minutes && !edit.started_at && !edit.ended_at && base.started_at) {
+    const startedAt = new Date(base.started_at);
+
+    if (!Number.isNaN(startedAt.getTime())) {
+      return {
+        startedAt: startedAt.toISOString(),
+        endedAt: new Date(
+          startedAt.getTime() + edit.duration_minutes * 60_000,
+        ).toISOString(),
+      };
+    }
+  }
+
+  return deriveWindow(mergeDraft(base, edit));
+}
+
+function timerStartFromDraft(draft: CompanionDraft) {
+  if (draft.started_at && !draft.ended_at) {
+    return draft.started_at;
+  }
+
+  if (
+    draft.duration_minutes &&
+    !draft.started_at &&
+    !draft.ended_at
+  ) {
+    return new Date(Date.now() - draft.duration_minutes * 60_000).toISOString();
+  }
+
+  return null;
+}
+
+function draftToStartTimerInput(
+  draft: CompanionDraft,
+): StartTimerInput | undefined {
+  const startedAt = timerStartFromDraft(draft);
+  const category = resolveCategory(draft).category;
+
+  if (
+    !startedAt &&
+    !draft.task_name?.trim() &&
+    !category &&
+    draft.hashtags.length === 0 &&
+    !draft.notes?.trim() &&
+    !draft.mood &&
+    !draft.effort_level &&
+    !draft.satisfaction &&
+    !draft.avoidance_marker &&
+    !draft.hyperfocus_marker &&
+    !draft.guilt_marker &&
+    !draft.novelty_marker
+  ) {
+    return undefined;
+  }
+
+  return {
+    started_at: startedAt,
+    task_name: draft.task_name,
+    category,
     hashtags: draft.hashtags,
     notes: draft.notes,
     mood: draft.mood,
@@ -916,10 +1033,12 @@ async function routeMessage(
       prompt: [
         "Classify this Alibi chat message and extract structured time-block data.",
         "",
-        "Valid intents: companion_chat, log_block, start_timer, stop_timer, analyse_blocks, clarify.",
+        "Valid intents: companion_chat, log_block, edit_block, start_timer, stop_timer, analyse_blocks, clarify.",
         "Use companion_chat for ordinary conversation, emotional check-ins, uncertainty, venting, or anything that is not clearly a request to save completed work.",
         "Use log_block when the user is trying to record, add, save, or log completed work, even if details are missing.",
-        "Use start_timer or stop_timer for explicit timer control.",
+        "Use edit_block when the user is asking to change, correct, rename, retime, recategorize, tag, or update an existing time block.",
+        "Use start_timer when they explicitly start a timer, or when ongoing language means the work is still in progress: 'i started X 30 minutes ago', 'i've been doing X for 30 minutes'.",
+        "Use stop_timer for explicit timer stop/control.",
         "Use analyse_blocks when they ask what they did, how long they spent, patterns, or reassurance from saved records.",
         "Use clarify only when the new message answers a prior clarification but is still incomplete.",
         "",
@@ -927,7 +1046,7 @@ async function routeMessage(
         "",
         "Schema:",
         "{",
-        '  "intent": "companion_chat" | "log_block" | "start_timer" | "stop_timer" | "analyse_blocks" | "clarify",',
+        '  "intent": "companion_chat" | "log_block" | "edit_block" | "start_timer" | "stop_timer" | "analyse_blocks" | "clarify",',
         '  "task_name": "string | null",',
         '  "category": "category name or slug | null",',
         '  "hashtags": ["strings without #"],',
@@ -949,7 +1068,11 @@ async function routeMessage(
         "- Return started_at and ended_at as complete ISO datetimes, never partial clock strings.",
         "- If the user says a range like '2 to 3:30', return both started_at and ended_at.",
         "- If they give a duration only, return duration_minutes.",
-        "- Do not invent a time window.",
+        "- If the user semantically says they are still doing the activity, use intent=start_timer with duration_minutes and no ended_at.",
+        "- If the user semantically says they completed or are logging finished work, use intent=log_block with duration_minutes and no invented started_at/ended_at; the server will save it as ending now.",
+        "- If the user asks to edit a specific or current block, use intent=edit_block and extract only the fields they want changed.",
+        "- Apply intent semantics across languages; examples are illustrative, not English trigger phrases.",
+        "- Do not invent explicit timestamps.",
         "- Prefer concise task names without filler words like 'worked on'.",
         "- Use an existing/default category when obvious: deep_work, admin, social, errands, care, creative, rest.",
         "- If the user gives a custom category name, return that name.",
@@ -1570,6 +1693,89 @@ export async function processCompanionMessage(
   };
 
   if (conversation.kind === "time_block") {
+    const routed = await routeMessage(
+      models,
+      trimmed,
+      null,
+      timezone,
+      recentMessages,
+    );
+
+    if (
+      (routed.intent === "edit_block" || routed.intent === "log_block") &&
+      draftHasBlockEdit(routed)
+    ) {
+      const currentBlock = conversation.related_time_block_id
+        ? await fetchTimeBlockForUser(
+            supabase,
+            user.id,
+            conversation.related_time_block_id,
+          )
+        : null;
+
+      if (!currentBlock) {
+        return finishWithAssistant(
+          { type: "error", message: "time block was not found." },
+          "time block was not found.",
+          "error",
+        );
+      }
+
+      const baseDraft = draftFromTimeBlock(currentBlock);
+      const mergedDraft = mergeDraft(baseDraft, routed);
+      const window = deriveEditWindow(baseDraft, routed);
+      const category = resolveCategory(mergedDraft).category;
+
+      if (!window || !mergedDraft.task_name?.trim() || !category) {
+        const question = clarificationQuestion(mergedDraft);
+        return finishWithAssistant(
+          {
+            type: "clarify",
+            question,
+            draft: mergedDraft,
+          },
+          question,
+          "clarification",
+        );
+      }
+
+      const result = await saveBlock({
+        id: currentBlock.id,
+        ...draftToSaveInput(mergedDraft, window, category),
+        category_id:
+          currentBlock.category === category ? currentBlock.category_id : null,
+        note_source: "chat",
+      });
+
+      if (result.type === "saved") {
+        const ack = await makeSavedBlockReply({
+          models,
+          action: "logged",
+          timeBlock: result.timeBlock,
+          userMessage: trimmed,
+        });
+        return finishWithAssistant(
+          {
+            type: "logged",
+            ack,
+            timeBlock: result.timeBlock,
+          },
+          ack,
+          "ack",
+        );
+      }
+
+      if (result.type === "not_found") {
+        return finishWithAssistant(
+          { type: "error", message: "time block was not found." },
+          "time block was not found.",
+          "error",
+        );
+      }
+
+      return finishWithAssistant(result, result.message, "error");
+    }
+
     const message = await timeBlockCompanionChat(
       models,
       trimmed,
@@ -1652,8 +1858,10 @@ export async function processCompanionMessage(
     clarificationDraft,
   );
 
-  if (routed.intent === "start_timer") {
-    const result = await startTimer();
+  if (
+    routed.intent === "start_timer"
+  ) {
+    const result = await startTimer(draftToStartTimerInput(mergedDraft));
     if (result.type === "started") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
       const ack = await makeAck(models, "started", mergedDraft.task_name ?? "timer");

@@ -5,20 +5,13 @@ import Link from "next/link"
 import {
   ArrowRight,
   CalendarDays,
-  ChevronDown,
   Clock,
   KeyRound,
   LayoutGrid,
   Loader2,
-  MessageCircle,
-  Pencil,
-  Plus,
   Play,
-  RotateCcw,
-  Send,
   Settings,
   Square,
-  Trash2,
   X,
 } from "lucide-react"
 import {
@@ -40,7 +33,31 @@ import {
 } from "@/lib/demo-storage"
 import { generateDemoBlockInsight, processDemoCompanionMessage } from "@/app/actions/demo"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
+import { CalendarView } from "@/components/dashboard/calendar-view"
+import { AlibiWorkspace } from "@/components/alibi-workspace"
+import {
+  BlockEditor as SharedBlockEditor,
+  CompanionChatPanel as SharedCompanionChatPanel,
+  DailyBlocks as SharedDailyBlocks,
+  TimeBlockItem,
+} from "@/components/time-block-actions"
 import type { CompanionDraft } from "@/lib/block-draft-utils"
+import {
+  createEditorState as createSharedEditorState,
+  createManualEditorState as createSharedManualEditorState,
+  type ChatMessage,
+  type EditorState,
+} from "@/components/time-block-helpers"
+import type { AlibiWorkspaceStore } from "@/lib/alibi-workspace-store"
+import {
+  defaultDemoCategories,
+  deleteDemoBlockSession,
+  resumeDemoBlockSession,
+  saveDemoActiveTimerDetailsSession,
+  saveDemoBlockSession,
+  startDemoTimerSession,
+  stopDemoTimerSession,
+} from "@/lib/demo-alibi-workspace-store"
 import {
   DEMO_COMPANION_MIN_TOKENS,
   DEMO_INSIGHT_MIN_TOKENS,
@@ -49,12 +66,13 @@ import {
   createDemoAiUsage,
   type DemoAiUsage,
 } from "@/lib/demo-token-budget"
-import type { CompanionMessageInsight, TimeBlockCategoryRecord, TimeBlockInsight } from "@/lib/types"
+import type { ActiveTimer, CompanionMessage, CompanionMessageInsight, TimeBlock, TimeBlockCategoryRecord, TimeBlockInsight } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { defaultCategoryColor, getCategoryMeta } from "@/lib/time-block-display"
+import { defaultCategoryColor } from "@/lib/time-block-display"
 
 type DemoActiveTimer = NonNullable<DemoStoredSession["active_timer"]>
-type DemoView = "tracker" | "dashboard"
+type DemoView = "tracker" | "dashboard" | "calendar"
+type DemoCalendarPanel = "edit" | "chat" | null
 
 type DemoActiveThread =
   | {
@@ -64,18 +82,6 @@ type DemoActiveThread =
       kind: "time_block"
       blockId: string
     }
-
-type EditorState = {
-  block?: DemoStoredBlock
-  isNewlyStopped: boolean
-  isManual: boolean
-  taskName: string
-  category: string
-  hashtags: string
-  notes: string
-  startedAt: string
-  endedAt: string
-}
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -100,19 +106,6 @@ function formatTime(value: string | null) {
   }).format(new Date(value))
 }
 
-function formatChatTimestamp(value: string) {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return ""
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date)
-}
-
 function formatDuration(start: string, end: string | null) {
   if (!end) return "0m"
 
@@ -125,14 +118,6 @@ function formatDuration(start: string, end: string | null) {
   return `${Math.max(1, minutes)}m`
 }
 
-function formatDateHeading(date: Date) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(date)
-}
-
 function toDateTimeLocal(value: string | null) {
   if (!value) return ""
 
@@ -140,7 +125,7 @@ function toDateTimeLocal(value: string | null) {
   if (Number.isNaN(date.getTime())) return ""
 
   const offsetMs = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 19)
 }
 
 function fromDateTimeLocal(value: string) {
@@ -164,42 +149,45 @@ function slugifyCategoryName(name: string) {
     .slice(0, 64)
 }
 
-function createManualEditorState(): EditorState {
-  const endedAt = new Date()
-  const startedAt = new Date(endedAt.getTime() - 30 * 60_000)
-
-  return {
-    isNewlyStopped: false,
-    isManual: true,
-    taskName: "",
-    category: "",
-    hashtags: "",
-    notes: "",
-    startedAt: toDateTimeLocal(startedAt.toISOString()),
-    endedAt: toDateTimeLocal(endedAt.toISOString()),
+function createDemoEditorState(block: DemoStoredBlock, isNewlyStopped = false): EditorState {
+  const editor = createSharedEditorState(demoBlockToTimeBlock(block), isNewlyStopped)
+  if (editor.startedAt && editor.startedAt === editor.endedAt) {
+    const endedAt = new Date(block.ended_at ?? block.started_at)
+    if (!Number.isNaN(endedAt.getTime())) {
+      editor.endedAt = toDateTimeLocal(new Date(endedAt.getTime() + 1000).toISOString())
+    }
   }
-}
-
-function createEditorState(block: DemoStoredBlock, isNewlyStopped = false): EditorState {
-  return {
-    block,
-    isNewlyStopped,
-    isManual: false,
-    taskName: block.task_name ?? "",
-    category: block.category ?? "",
-    hashtags: block.hashtags.join(" "),
-    notes: block.notes ?? "",
-    startedAt: toDateTimeLocal(block.started_at),
-    endedAt: toDateTimeLocal(block.ended_at),
-  }
-}
-
-function categoryMeta(category: string | null, categories: TimeBlockCategoryRecord[]) {
-  return getCategoryMeta(category, categories)
+  return editor
 }
 
 function makeMessage(role: DemoStoredMessage["role"], text: string): DemoStoredMessage {
   return makeDemoMessage(role, text)
+}
+
+function demoMessageToChatMessage(message: DemoStoredMessage): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    createdAt: message.created_at,
+  }
+}
+
+function demoMessageToCompanionMessage(message: DemoStoredMessage): CompanionMessage {
+  return {
+    id: message.id,
+    conversation_id: message.related_time_block_id
+      ? `demo-block-thread-${message.related_time_block_id}`
+      : "demo-general",
+    user_id: "demo",
+    role: message.role,
+    content: message.text,
+    message_type: message.message_type,
+    model: "demo",
+    related_time_block_id: message.related_time_block_id,
+    metadata: message.metadata,
+    created_at: message.created_at,
+  }
 }
 
 function blockThreadIntro(block: DemoStoredBlock): DemoStoredMessage {
@@ -359,12 +347,15 @@ export default function DemoPage() {
   const [aiSettings, setAiSettings] = useState<DemoAiSettings>(() => createDemoAiSettings())
   const [activeThread, setActiveThread] = useState<DemoActiveThread>({ kind: "general" })
   const [view, setView] = useState<DemoView>("tracker")
+  const [calendarPanel, setCalendarPanel] = useState<DemoCalendarPanel>(null)
+  const [calendarSelectedBlock, setCalendarSelectedBlock] = useState<TimeBlock | null>(null)
   const [showAiPanel, setShowAiPanel] = useState(false)
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [pending, setPending] = useState(false)
   const [chatPending, setChatPending] = useState(false)
+  const sessionRef = useRef<DemoStoredSession | null>(null)
 
   const today = useMemo(() => new Date(), [])
   const elapsed = activeTimer
@@ -436,7 +427,145 @@ export default function DemoPage() {
     () => blocks.filter((block) => block.ended_at).map(demoBlockToTimeBlock),
     [blocks],
   )
+  const demoChatMessages = useMemo(
+    () => [
+      ...messages.map(demoMessageToCompanionMessage),
+      ...Object.values(blockThreads).flatMap((thread) => thread.map(demoMessageToCompanionMessage)),
+    ],
+    [blockThreads, messages],
+  )
   const usingCustomAiEndpoint = Boolean(aiSettings.api_key.trim())
+
+  const currentSession = useMemo<DemoStoredSession | null>(() => {
+    if (!name) return null
+
+    return {
+      version: DEMO_SESSION_VERSION,
+      name,
+      active_timer: activeTimer,
+      blocks,
+      categories,
+      messages,
+      block_threads: blockThreads,
+      pending_draft: pendingDraft,
+      insights,
+      chat_insights: chatInsights,
+      ai_usage: aiUsage,
+      ai_settings: aiSettings,
+      updated_at: new Date().toISOString(),
+    }
+  }, [activeTimer, aiSettings, aiUsage, blockThreads, blocks, categories, chatInsights, insights, messages, name, pendingDraft])
+
+  sessionRef.current = currentSession
+
+  const applyDemoSession = useCallback((session: DemoStoredSession) => {
+    setName(session.name)
+    setNameInput(session.name)
+    setActiveTimer(session.active_timer)
+    setBlocks(session.blocks)
+    setCategories(session.categories)
+    setMessages(session.messages)
+    setBlockThreads(session.block_threads)
+    setPendingDraft(session.pending_draft)
+    setInsights(session.insights)
+    setChatInsights(session.chat_insights)
+    setAiUsage(session.ai_usage)
+    setAiSettings(session.ai_settings)
+  }, [])
+
+  const demoWorkspaceStore = useMemo<AlibiWorkspaceStore>(() => {
+    const getSession = () => sessionRef.current
+    const applyMutation = <Result,>(
+      mutate: (session: DemoStoredSession) => { session: DemoStoredSession; result: Result },
+      fallback: Result,
+    ) => {
+      const session = getSession()
+      if (!session) return fallback
+      const next = mutate(session)
+      sessionRef.current = next.session
+      applyDemoSession(next.session)
+      return next.result
+    }
+
+    return {
+      capabilities: {
+        mode: "demo",
+        canImportDemo: false,
+        canSyncCalendar: false,
+        supportsVoice: true,
+      },
+      async loadTracker(range) {
+        const session = getSession()
+        if (!session) {
+          return { type: "error", message: "demo session is not ready." }
+        }
+        const start = new Date(range.start).getTime()
+        const end = new Date(range.end).getTime()
+        const timeBlocks = session.blocks
+          .filter((block) => {
+            if (!block.ended_at) return false
+            const startedAt = new Date(block.started_at).getTime()
+            const endedAt = new Date(block.ended_at).getTime()
+            return startedAt < end && endedAt > start
+          })
+          .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime())
+          .map(demoBlockToTimeBlock)
+
+        return {
+          type: "loaded",
+          activeTimer: session.active_timer,
+          activeTimeBlock: session.active_timer?.resumed_block
+            ? demoBlockToTimeBlock(session.active_timer.resumed_block)
+            : null,
+          timeBlocks,
+          categories: session.categories.length > 0 ? session.categories : defaultDemoCategories(),
+        }
+      },
+      async startTimer(input) {
+        return applyMutation((session) => startDemoTimerSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async stopTimer(input) {
+        return applyMutation((session) => stopDemoTimerSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async saveActiveTimerDetails(input) {
+        return applyMutation((session) => saveDemoActiveTimerDetailsSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async saveBlock(input) {
+        return applyMutation((session) => saveDemoBlockSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async deleteBlock(input) {
+        return applyMutation((session) => deleteDemoBlockSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async resumeBlock(input) {
+        return applyMutation((session) => resumeDemoBlockSession(session, input), {
+          type: "error",
+          message: "demo session is not ready.",
+        })
+      },
+      async loadCategories() {
+        const session = getSession()
+        return {
+          type: "loaded",
+          categories: session?.categories.length ? session.categories : defaultDemoCategories(),
+        }
+      },
+    }
+  }, [applyDemoSession])
 
   const completedBlocks = useMemo(
     () =>
@@ -444,6 +573,10 @@ export default function DemoPage() {
         .filter((block) => block.ended_at)
         .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()),
     [blocks],
+  )
+  const completedTimeBlocks = useMemo(
+    () => completedBlocks.map(demoBlockToTimeBlock),
+    [completedBlocks],
   )
   const activeBlock =
     activeThread.kind === "time_block"
@@ -453,6 +586,10 @@ export default function DemoPage() {
     activeThread.kind === "time_block"
       ? (blockThreads[activeThread.blockId] ?? [])
       : messages
+  const activeChatMessages = useMemo(
+    () => activeMessages.map(demoMessageToChatMessage),
+    [activeMessages],
+  )
 
   const handleNameSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -546,7 +683,7 @@ export default function DemoPage() {
 
     setActiveTimer(null)
     setBlocks((current) => [block, ...current.filter((item) => item.id !== block.id)])
-    setEditor(createEditorState(block, !block.task_name))
+    setEditor(createDemoEditorState(block, !block.task_name))
   }
 
   const handleSave = () => {
@@ -592,13 +729,13 @@ export default function DemoPage() {
       category,
       hashtags: parseHashtags(editor.hashtags),
       notes: editor.notes.trim() || null,
-      mood: editor.block?.mood ?? null,
-      effort_level: editor.block?.effort_level ?? null,
-      satisfaction: editor.block?.satisfaction ?? null,
-      avoidance_marker: editor.block?.avoidance_marker ?? false,
-      hyperfocus_marker: editor.block?.hyperfocus_marker ?? false,
-      guilt_marker: editor.block?.guilt_marker ?? false,
-      novelty_marker: editor.block?.novelty_marker ?? false,
+      mood: editor.mood || null,
+      effort_level: editor.effortLevel || null,
+      satisfaction: editor.satisfaction || null,
+      avoidance_marker: editor.avoidanceMarker,
+      hyperfocus_marker: editor.hyperfocusMarker,
+      guilt_marker: editor.guiltMarker,
+      novelty_marker: editor.noveltyMarker,
       agent_metadata: editor.block?.agent_metadata ?? {},
       created_at: editor.block?.created_at ?? nowIso,
       updated_at: nowIso,
@@ -624,7 +761,7 @@ export default function DemoPage() {
     setEditor(null)
   }
 
-  const handleDelete = (block: DemoStoredBlock) => {
+  const handleDelete = (block: { id: string }) => {
     setBlocks((current) => current.filter((item) => item.id !== block.id))
     setBlockThreads((current) => {
       const next = { ...current }
@@ -636,32 +773,46 @@ export default function DemoPage() {
       setActiveThread({ kind: "general" })
     }
     if (editor?.block?.id === block.id) setEditor(null)
+    if (calendarSelectedBlock?.id === block.id) {
+      setCalendarSelectedBlock(null)
+      setCalendarPanel(null)
+    }
   }
 
   const handleOpenGeneralThread = async () => {
     setActiveThread({ kind: "general" })
   }
 
-  const handleChatAboutBlock = (block: DemoStoredBlock) => {
-    setActiveThread({ kind: "time_block", blockId: block.id })
+  const handleChatAboutBlock = (block: { id: string }) => {
+    const storedBlock = blocks.find((item) => item.id === block.id)
+    if (!storedBlock) return
+
+    setActiveThread({ kind: "time_block", blockId: storedBlock.id })
     setBlockThreads((current) =>
-      current[block.id]?.length
+      current[storedBlock.id]?.length
         ? current
         : {
             ...current,
-            [block.id]: [blockThreadIntro(block)],
+            [storedBlock.id]: [blockThreadIntro(storedBlock)],
           },
     )
   }
 
-  const handleResume = (block: DemoStoredBlock) => {
+  const handleResume = (block: { id: string }) => {
+    const storedBlock = blocks.find((item) => item.id === block.id)
+    if (!storedBlock) return
     if (activeTimer) return
     setEditor(null)
-    if (activeThread.kind === "time_block" && activeThread.blockId === block.id) {
+    if (activeThread.kind === "time_block" && activeThread.blockId === storedBlock.id) {
       setActiveThread({ kind: "general" })
     }
-    setActiveTimer({ user_id: "demo", started_at: block.started_at, created_at: new Date().toISOString(), resumed_block: block })
-    setBlocks((current) => current.filter((item) => item.id !== block.id))
+    setActiveTimer({
+      user_id: "demo",
+      started_at: storedBlock.started_at,
+      created_at: new Date().toISOString(),
+      resumed_block: storedBlock,
+    })
+    setBlocks((current) => current.filter((item) => item.id !== storedBlock.id))
     setNow(Date.now())
   }
 
@@ -744,7 +895,8 @@ export default function DemoPage() {
         setPendingDraft(result.pendingDraft)
 
         if (result.operation?.type === "start_timer" && !activeTimer) {
-          setActiveTimer({ user_id: "demo", started_at: new Date().toISOString(), created_at: new Date().toISOString() })
+          const startedAt = result.operation.started_at ?? new Date().toISOString()
+          setActiveTimer({ user_id: "demo", started_at: startedAt, created_at: startedAt })
           setNow(Date.now())
         }
 
@@ -763,7 +915,7 @@ export default function DemoPage() {
           setActiveTimer(null)
           setBlocks((current) => [block, ...current.filter((item) => item.id !== block.id)])
           void refreshInsight(block)
-          if (!block.task_name || !block.category) setEditor(createEditorState(block, true))
+          if (!block.task_name || !block.category) setEditor(createDemoEditorState(block, true))
         }
 
         if (result.operation?.type === "save_block") {
@@ -825,6 +977,104 @@ export default function DemoPage() {
     },
     [activeThread, activeTimer, aiSettings, aiUsage, blockThreads, blocks, chatPending, insights, messages, pendingDraft, refreshInsight, usingCustomAiEndpoint],
   )
+
+  const handleCalendarSelectedBlockChange = useCallback(
+    (block: TimeBlock | null) => {
+      if (block?.id !== calendarSelectedBlock?.id) {
+        setCalendarPanel(null)
+        setEditor(null)
+      }
+      setCalendarSelectedBlock(block)
+    },
+    [calendarSelectedBlock?.id],
+  )
+
+  const handleCalendarEdit = useCallback((block: TimeBlock) => {
+    setEditor(createSharedEditorState(block))
+    setCalendarPanel("edit")
+  }, [])
+
+  const handleCalendarChatAbout = useCallback(
+    (block: TimeBlock) => {
+      handleChatAboutBlock(block)
+      setCalendarPanel("chat")
+    },
+    [handleChatAboutBlock],
+  )
+
+  const handleCalendarOpenGeneralThread = useCallback(async () => {
+    await handleOpenGeneralThread()
+    setCalendarPanel("chat")
+  }, [])
+
+  const calendarDetailSlot =
+    calendarSelectedBlock && calendarPanel === "edit" && editor ? (
+      <SharedBlockEditor
+        editor={editor}
+        categories={categoryOptions}
+        setEditor={(nextEditor) => {
+          setEditor(nextEditor)
+          if (!nextEditor) setCalendarPanel(null)
+        }}
+        onSave={handleSave}
+        onDelete={editor.block ? () => handleDelete(editor.block!) : undefined}
+        pending={pending}
+      />
+    ) : calendarSelectedBlock && calendarPanel === "chat" ? (
+      <SharedCompanionChatPanel
+        threadKind={activeThread.kind}
+        threadTitle={activeBlock?.task_name ?? null}
+        messages={activeChatMessages}
+        pending={chatPending}
+        onOpenGeneral={handleCalendarOpenGeneralThread}
+        onSubmit={handleChat}
+        onClose={() => setCalendarPanel(null)}
+        voiceFileName="alibi-demo-voice.webm"
+        voiceMode="demo"
+      />
+    ) : calendarSelectedBlock ? (
+      <TimeBlockItem
+        block={calendarSelectedBlock}
+        categories={categoryOptions}
+        onChatAbout={handleCalendarChatAbout}
+        onEdit={handleCalendarEdit}
+        onDelete={handleDelete}
+        pending={pending}
+      />
+    ) : null
+
+  const handleWorkspaceSnapshotChange = useCallback((snapshot: {
+    activeTimer: ActiveTimer | null
+    activeTimeBlock: TimeBlock | null
+    timeBlocks: TimeBlock[]
+    categories: TimeBlockCategoryRecord[]
+  }) => {
+    setActiveTimer(snapshot.activeTimer as DemoActiveTimer | null)
+    setCategories(snapshot.categories)
+    setBlocks((current) => {
+      const openId = snapshot.activeTimeBlock?.id
+      const completed = snapshot.timeBlocks
+        .filter((block) => block.ended_at)
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+        .map((block) => ({
+          ...(current.find((item) => item.id === block.id) ?? {
+            user_id: "demo" as const,
+            agent_metadata: {},
+          }),
+          ...block,
+          user_id: "demo" as const,
+          ended_at: block.ended_at,
+          duration_seconds: block.duration_seconds,
+          hashtags: block.hashtags ?? [],
+        }))
+      const rest = current.filter(
+        (block) =>
+          !completed.some((item) => item.id === block.id) &&
+          block.id !== openId,
+      )
+      return [...completed, ...rest]
+    })
+  }, [])
 
   if (!loaded) {
     return (
@@ -953,6 +1203,19 @@ export default function DemoPage() {
             <LayoutGrid className="h-4 w-4" />
             dashboard
           </button>
+          <button
+            type="button"
+            onClick={() => setView("calendar")}
+            className={cn(
+              "inline-flex h-10 items-center gap-2 rounded-2xl px-4 text-sm font-black transition",
+              view === "calendar"
+                ? "bg-alibi-blue text-white"
+                : "bg-white text-alibi-teal hover:bg-alibi-lavender/20 hover:text-alibi-blue",
+            )}
+          >
+            <CalendarDays className="h-4 w-4" />
+            calendar
+          </button>
         </div>
 
         {view === "dashboard" ? (
@@ -963,248 +1226,59 @@ export default function DemoPage() {
             emptyHref="/demo"
             emptyAction="back to tracker"
             chatInsights={chatInsights}
+            chatMessages={demoChatMessages}
+          />
+        ) : view === "calendar" ? (
+          <CalendarView
+            blocks={dashboardBlocks}
+            categories={categoryOptions}
+            detailSlot={calendarDetailSlot}
+            detailMode={calendarSelectedBlock ? "expanded" : "default"}
+            onSelectedBlockChange={handleCalendarSelectedBlockChange}
           />
         ) : (
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-          <div className="flex flex-col gap-5">
-            <section className="alibi-card-pop relative overflow-hidden p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-                    active timer
-                  </p>
-                  <h1 className="mt-2 text-4xl font-black tracking-normal text-alibi-blue sm:text-5xl">
-                    {formatElapsed(elapsed)}
-                  </h1>
-                </div>
-                <div
-                  className={cn(
-                    "flex h-14 w-14 items-center justify-center rounded-2xl border",
-                    activeTimer
-                      ? "border-alibi-pink/25 bg-alibi-pink/15 text-alibi-pink"
-                      : "border-alibi-teal/25 bg-alibi-teal/15 text-alibi-teal",
-                  )}
-                >
-                  <Clock className="h-5 w-5" />
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center gap-3">
-                {activeTimer ? (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    disabled={pending}
-                    className="alibi-button-stop inline-flex h-11 min-w-32 items-center justify-center gap-2 px-4 text-sm font-black"
-                  >
-                    {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
-                    stop
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStart}
-                    disabled={pending}
-                    className="alibi-button-primary inline-flex h-11 min-w-32 items-center justify-center gap-2 text-sm"
-                  >
-                    <Play className="h-4 w-4" />
-                    start
-                  </button>
-                )}
-              </div>
-
-              <p className="relative mt-4 text-sm font-medium leading-6 text-alibi-teal">
-                {activeTimer
-                  ? `running since ${formatTime(activeTimer.started_at)}`
-                  : "start when you begin, stop when the block is real."}
-              </p>
-            </section>
-
-            {error && (
-              <div
-                role="alert"
-                className="alibi-banner-error"
-              >
-                {error}
-              </div>
-            )}
-
-            {editor && (
-              <BlockEditor
-                editor={editor}
-                categories={categoryOptions}
-                setEditor={setEditor}
-                onSave={handleSave}
-                onDelete={editor.block ? () => handleDelete(editor.block!) : undefined}
-                pending={pending}
+          <AlibiWorkspace
+            store={demoWorkspaceStore}
+            initialSnapshot={{
+              activeTimer,
+              activeTimeBlock: activeTimer?.resumed_block
+                ? demoBlockToTimeBlock(activeTimer.resumed_block)
+                : null,
+              timeBlocks: completedTimeBlocks,
+              categories: categoryOptions,
+            }}
+            onSnapshotChange={handleWorkspaceSnapshotChange}
+            onBlockSaved={(block) => {
+              const stored = sessionRef.current?.blocks.find((item) => item.id === block.id)
+              if (stored) void refreshInsight(stored)
+            }}
+            onBlockDeleted={(id) => {
+              if (activeThread.kind === "time_block" && activeThread.blockId === id) {
+                setActiveThread({ kind: "general" })
+              }
+              if (calendarSelectedBlock?.id === id) {
+                setCalendarSelectedBlock(null)
+                setCalendarPanel(null)
+              }
+            }}
+            onChatAbout={handleChatAboutBlock}
+            onOpenCalendar={() => setView("calendar")}
+            renderCompanion={() => (
+              <SharedCompanionChatPanel
+                threadKind={activeThread.kind}
+                threadTitle={activeBlock?.task_name ?? null}
+                messages={activeChatMessages}
+                pending={chatPending}
+                onOpenGeneral={handleOpenGeneralThread}
+                onSubmit={handleChat}
+                voiceFileName="alibi-demo-voice.webm"
+                voiceMode="demo"
               />
             )}
-
-            <CompanionChatPanel
-              threadKind={activeThread.kind}
-              threadTitle={activeBlock?.task_name ?? null}
-              messages={activeMessages}
-              pending={chatPending}
-              onOpenGeneral={handleOpenGeneralThread}
-              onSubmit={handleChat}
-            />
-          </div>
-
-          <DailyBlocks
-            date={today}
-            blocks={completedBlocks}
-            categories={categoryOptions}
-            canResume={activeTimer === null}
-            onAdd={() => setEditor(createManualEditorState())}
-            onEdit={(block) => setEditor(createEditorState(block))}
-            onDelete={handleDelete}
-            onResume={handleResume}
-            onChatAbout={handleChatAboutBlock}
-            pending={pending}
           />
-        </section>
         )}
       </div>
     </main>
-  )
-}
-
-function CompanionChatPanel({
-  threadKind,
-  threadTitle,
-  messages,
-  pending,
-  onOpenGeneral,
-  onSubmit,
-}: {
-  threadKind: DemoActiveThread["kind"]
-  threadTitle: string | null
-  messages: DemoStoredMessage[]
-  pending: boolean
-  onOpenGeneral: () => Promise<void>
-  onSubmit: (text: string) => Promise<void>
-}) {
-  const [value, setValue] = useState("")
-  const latestMessageRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    latestMessageRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    })
-  }, [messages.length, pending])
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const trimmed = value.trim()
-    if (!trimmed || pending) return
-    setValue("")
-    void onSubmit(trimmed)
-  }
-
-  return (
-    <section className="alibi-card p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-            alibi
-          </p>
-          <h2 className="mt-1 text-xl font-black text-alibi-blue">
-            {threadKind === "time_block"
-              ? threadTitle
-                ? `about ${threadTitle}`
-                : "about this block"
-              : "companion chat"}
-          </h2>
-        </div>
-        <div className="flex items-center">
-          {threadKind === "time_block" ? (
-            <button
-              type="button"
-              onClick={() => void onOpenGeneral()}
-              disabled={pending}
-              className="alibi-button-primary inline-flex h-10 items-center justify-center gap-2 px-3 text-xs font-black"
-            >
-              <MessageCircle className="h-4 w-4" />
-              main chat
-            </button>
-          ) : (
-            <div className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-alibi-pink/15 px-3 text-xs font-black text-alibi-pink">
-              <MessageCircle className="h-4 w-4" />
-              main chat
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex max-h-80 min-h-44 flex-col gap-3 overflow-y-auto alibi-inset p-3">
-        {messages.length === 0 ? (
-          <p className="mt-auto text-sm font-semibold leading-6 text-alibi-teal">
-            nothing here yet.
-          </p>
-        ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                "alibi-chat-bubble",
-                message.role === "user"
-                  ? "ml-auto bg-alibi-blue text-white"
-                  : "mr-auto bg-white text-alibi-ink shadow-[0_1px_3px_rgba(50,83,199,0.06)]",
-              )}
-            >
-              <p className="whitespace-pre-wrap">{message.text}</p>
-              <time
-                dateTime={message.created_at}
-                className={cn(
-                  "mt-1 block font-mono text-[10px] font-black uppercase leading-4",
-                  message.role === "user" ? "text-white/70" : "text-alibi-teal/70",
-                )}
-              >
-                {formatChatTimestamp(message.created_at)}
-              </time>
-            </div>
-          ))
-        )}
-        {pending && (
-          <div className="mr-auto inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-alibi-teal shadow-[0_1px_3px_rgba(50,83,199,0.06)]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            thinking.
-          </div>
-        )}
-        <div ref={latestMessageRef} />
-      </div>
-
-      <form onSubmit={handleSubmit} className="mt-4 flex items-end gap-2">
-        <label className="sr-only" htmlFor="demo-companion-message">
-          message alibi
-        </label>
-        <textarea
-          id="demo-companion-message"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault()
-              event.currentTarget.form?.requestSubmit()
-            }
-          }}
-          rows={2}
-          disabled={pending}
-          placeholder="worked on the proposal for 45 minutes..."
-          className="alibi-input min-h-11 flex-1 resize-none py-2 leading-6 placeholder:text-alibi-teal/60 disabled:opacity-55"
-        />
-        <button
-          type="submit"
-          disabled={!value.trim() || pending}
-          aria-label="send message"
-          title="send"
-          className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
-        >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
-      </form>
-    </section>
   )
 }
 
@@ -1315,440 +1389,6 @@ function DemoAiSettingsPanel({
         custom settings are stored only in this browser's local demo session and sent to the server
         action for demo AI calls.
       </p>
-    </section>
-  )
-}
-
-function CategoryPicker({
-  value,
-  categories,
-  onChange,
-}: {
-  value: string
-  categories: TimeBlockCategoryRecord[]
-  onChange: (val: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [addingNew, setAddingNew] = useState(false)
-  const [newValue, setNewValue] = useState("")
-  const ref = useRef<HTMLDivElement>(null)
-  const newInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-        setAddingNew(false)
-        setNewValue("")
-      }
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
-
-  useEffect(() => {
-    if (addingNew) newInputRef.current?.focus()
-  }, [addingNew])
-
-  const selected = categories.find(
-    (c) => c.slug === value || c.name.toLowerCase() === value.toLowerCase(),
-  )
-  const displayName = selected?.name ?? (value || null)
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((o) => !o)
-          setAddingNew(false)
-          setNewValue("")
-        }}
-        className="alibi-input flex h-11 w-full items-center justify-between gap-2 text-left"
-      >
-        <span
-          className={cn(
-            "flex items-center gap-2 text-sm font-semibold",
-            displayName ? "text-alibi-ink" : "text-alibi-teal/50",
-          )}
-        >
-          {selected && (
-            <span
-              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-              style={{ backgroundColor: selected.color }}
-            />
-          )}
-          {displayName ?? "choose or add a category"}
-        </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 flex-shrink-0 text-alibi-teal transition-transform duration-150",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-
-      {open && (
-        <div className="alibi-card absolute z-50 mt-1 w-full overflow-hidden p-1">
-          {!addingNew ? (
-            <button
-              type="button"
-              onClick={() => setAddingNew(true)}
-              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-semibold text-alibi-teal transition hover:bg-alibi-lavender/20"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              add new
-            </button>
-          ) : (
-            <div className="px-1 pb-1 pt-0.5">
-              <input
-                ref={newInputRef}
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newValue.trim()) {
-                    onChange(newValue.trim())
-                    setOpen(false)
-                    setAddingNew(false)
-                    setNewValue("")
-                  } else if (e.key === "Escape") {
-                    setAddingNew(false)
-                    setNewValue("")
-                  }
-                }}
-                className="alibi-input h-9 w-full text-sm"
-                placeholder="new category name, press enter"
-              />
-            </div>
-          )}
-
-          <div className="my-1 border-t border-alibi-blue/10" />
-
-          <div className="relative -mx-1 -mb-1">
-            <div className="max-h-48 overflow-y-auto px-1 pb-6">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(cat.slug)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-semibold text-alibi-ink transition hover:bg-alibi-lavender/20",
-                    value === cat.slug && "bg-alibi-blue/10 text-alibi-blue",
-                  )}
-                >
-                  <span
-                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-            {categories.length > 4 && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-white to-transparent" />
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BlockEditor({
-  editor,
-  categories,
-  setEditor,
-  onSave,
-  onDelete,
-  pending,
-}: {
-  editor: EditorState
-  categories: TimeBlockCategoryRecord[]
-  setEditor: (editor: EditorState | null) => void
-  onSave: () => void
-  onDelete?: () => void
-  pending: boolean
-}) {
-  return (
-    <section className="alibi-card p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-            block editor
-          </p>
-          <h2 className="mt-1 text-xl font-black text-alibi-blue">
-            {editor.isNewlyStopped ? "name this block" : editor.isManual ? "add block" : "edit block"}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={() => setEditor(null)}
-          aria-label="close editor"
-          title="close"
-          className="flex h-9 w-9 items-center justify-center rounded-2xl text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-pink/15 hover:text-alibi-pink"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-4">
-        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
-          task name
-          <input
-            value={editor.taskName}
-            onChange={(event) => setEditor({ ...editor, taskName: event.target.value })}
-            className="alibi-input h-11"
-            placeholder="what happened?"
-          />
-        </label>
-
-        <div className="grid gap-1.5">
-          <span className="text-sm font-bold text-alibi-blue">category</span>
-          <CategoryPicker
-            value={editor.category}
-            categories={categories}
-            onChange={(val) => setEditor({ ...editor, category: val })}
-          />
-          <span className="text-xs font-semibold leading-5 text-alibi-teal">
-            type a new name to create a demo category.
-          </span>
-        </div>
-
-        <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
-          <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
-            start
-            <input
-              type="datetime-local"
-              value={editor.startedAt}
-              onChange={(event) => setEditor({ ...editor, startedAt: event.target.value })}
-              className="alibi-input h-11 min-w-0"
-            />
-          </label>
-
-          <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
-            end
-            <input
-              type="datetime-local"
-              value={editor.endedAt}
-              onChange={(event) => setEditor({ ...editor, endedAt: event.target.value })}
-              className="alibi-input h-11 min-w-0"
-            />
-          </label>
-        </div>
-
-        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
-          hashtags
-          <input
-            value={editor.hashtags}
-            onChange={(event) => setEditor({ ...editor, hashtags: event.target.value })}
-            className="alibi-input h-11"
-            placeholder="client, writing, reset"
-          />
-        </label>
-
-        <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
-          notes - what really happened
-          <textarea
-            value={editor.notes}
-            onChange={(event) => setEditor({ ...editor, notes: event.target.value })}
-            className="alibi-input min-h-24 resize-y py-2"
-            placeholder="what you intended, what actually happened, what shifted, how it felt"
-          />
-        </label>
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        {onDelete ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={pending}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-bold text-alibi-pink transition hover:-translate-y-0.5 hover:bg-alibi-pink/10 disabled:translate-y-0 disabled:opacity-55"
-          >
-            <Trash2 className="h-4 w-4" />
-            delete
-          </button>
-        ) : (
-          <div />
-        )}
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEditor(null)}
-            disabled={pending}
-            className="h-10 rounded-2xl px-4 text-sm font-bold text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-lavender/15 disabled:translate-y-0 disabled:opacity-55"
-          >
-            cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={pending}
-            className="alibi-button-teal inline-flex h-10 items-center justify-center gap-2 px-4 text-sm font-black"
-          >
-            save
-          </button>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function DailyBlocks({
-  date,
-  blocks,
-  categories,
-  canResume,
-  onAdd,
-  onEdit,
-  onDelete,
-  onResume,
-  onChatAbout,
-  pending,
-}: {
-  date: Date
-  blocks: DemoStoredBlock[]
-  categories: TimeBlockCategoryRecord[]
-  canResume: boolean
-  onAdd: () => void
-  onEdit: (block: DemoStoredBlock) => void
-  onDelete: (block: DemoStoredBlock) => void
-  onResume: (block: DemoStoredBlock) => void
-  onChatAbout: (block: DemoStoredBlock) => void
-  pending: boolean
-}) {
-  return (
-    <section className="alibi-card min-h-130 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal">
-            today
-          </p>
-          <h2 className="mt-1 text-2xl font-black text-alibi-blue">{formatDateHeading(date)}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onAdd}
-            disabled={pending}
-            aria-label="add completed block"
-            title="add block"
-            className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-alibi-lavender/25 text-alibi-blue">
-            <CalendarDays className="h-4 w-4" />
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        {blocks.length === 0 ? (
-          <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-alibi-lavender/40 bg-alibi-lavender/10 px-6 text-center text-sm font-semibold leading-6 text-alibi-teal">
-            no completed blocks for today yet.
-          </div>
-        ) : (
-          <ol className="grid gap-3">
-            {blocks.map((block, index) => {
-              const category = categoryMeta(block.category, categories)
-              const isLatestBlock = index === blocks.length - 1
-
-              return (
-                <li
-                  key={block.id}
-                  className="alibi-block-item grid gap-3 sm:grid-cols-[7.5rem_minmax(0,1fr)_auto]"
-                >
-                  <div className="font-mono text-sm font-semibold leading-6 text-alibi-teal">
-                    <div>{formatTime(block.started_at)}</div>
-                    <div>{formatTime(block.ended_at)}</div>
-                    <div className="mt-1 font-sans text-sm font-black text-alibi-blue">
-                      {formatDuration(block.started_at, block.ended_at)}
-                    </div>
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <span className="text-sm font-black uppercase tracking-[0.08em] text-alibi-teal">
-                        {category.name}
-                      </span>
-                    </div>
-                    <h3 className="mt-2 wrap-break-words text-base font-black text-alibi-ink">
-                      {block.task_name || "unnamed time block"}
-                    </h3>
-                    {block.notes && (
-                      <p className="mt-1 wrap-break-words text-sm font-medium leading-6 text-alibi-teal">
-                        {block.notes}
-                      </p>
-                    )}
-                    {block.hashtags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {block.hashtags.map((hashtag) => (
-                          <span key={hashtag} className="alibi-chip">
-                            #{hashtag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-start gap-1">
-                    {isLatestBlock && canResume && (
-                      <button
-                        type="button"
-                        onClick={() => onResume(block)}
-                        disabled={pending}
-                        aria-label="resume latest block"
-                        title="resume"
-                        className="alibi-button-teal inline-flex h-9 items-center justify-center gap-1.5 px-3 text-xs font-black"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        resume
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onChatAbout(block)}
-                      aria-label="chat about this block"
-                      title="chat about this"
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-teal hover:text-white"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onEdit(block)}
-                      aria-label="edit block"
-                      title="edit"
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-blue hover:text-white"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(block)}
-                      disabled={pending}
-                      aria-label="delete block"
-                      title="delete"
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-alibi-pink transition hover:-translate-y-0.5 hover:bg-alibi-pink hover:text-white disabled:translate-y-0 disabled:opacity-55"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
-        )}
-      </div>
     </section>
   )
 }

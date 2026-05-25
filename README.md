@@ -44,7 +44,8 @@ Chat can:
 - respond conversationally without forcing a log
 - start or stop the timer
 - log completed work into `time_blocks`
-- ask for missing task or completed-work timing before saving, while inferring clear categories to reduce friction
+- parse duration intent semantically: ongoing work starts a backdated open timer, completed work logs the duration ending now
+- ask for missing task or ambiguous category evidence before saving, while inferring clear categories to reduce friction
 - answer check-ins and pattern questions from saved evidence
 
 Chat history is useful context, but block notes are treated as stronger evidence.
@@ -461,6 +462,7 @@ Implemented:
 - start, stop, resume, save, edit, delete block flows
 - manual/backdated block creation
 - chat start/stop/log/clarification/check-in flows
+- semantic chat time parsing: ongoing duration starts an open backdated timer, while completed-work duration without an explicit start/end logs the immediately preceding duration as a completed block ending now
 - notes-first analysis retrieval for companion responses
 - note version preservation
 - note-derived insight extraction
@@ -481,7 +483,6 @@ Pending:
 - Playwright E2E selectors confirmed against live UI; authenticated app flows not yet covered
 - fix `pnpm lint` (`next lint` incompatible with Next 16)
 - timezone-safe `getDayRange` (server uses server local time instead of user IANA timezone)
-- semantic chat time parsing: ongoing duration starts an open backdated timer, completed duration clarifies when it happened
 
 ---
 

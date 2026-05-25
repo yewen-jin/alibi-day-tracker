@@ -71,18 +71,14 @@ describe("deriveWindow", () => {
     expect(result?.endedAt).toBe("2026-05-05T11:30:00.000Z")
   })
 
-  it("falls back to now-anchored window when only duration_minutes is given", () => {
-    const before = Date.now()
+  it("derives a recent completed window ending now when only duration_minutes is given", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-05-05T12:00:00.000Z"))
     const draft = emptyDraft({ duration_minutes: 30 })
     const result = deriveWindow(draft)
-    const after = Date.now()
-
-    expect(result).not.toBeNull()
-    const endMs = new Date(result!.endedAt).getTime()
-    const startMs = new Date(result!.startedAt).getTime()
-    expect(endMs - startMs).toBe(30 * 60_000)
-    expect(endMs).toBeGreaterThanOrEqual(before)
-    expect(endMs).toBeLessThanOrEqual(after + 5)
+    expect(result?.startedAt).toBe("2026-05-05T11:30:00.000Z")
+    expect(result?.endedAt).toBe("2026-05-05T12:00:00.000Z")
+    vi.useRealTimers()
   })
 })
 
