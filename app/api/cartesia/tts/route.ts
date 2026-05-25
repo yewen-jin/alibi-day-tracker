@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
+  const body = await request.json().catch(() => null) as {
+    text?: string;
+    mode?: string;
+  } | null;
+  const mode = body?.mode === "demo" ? "demo" : "authenticated";
   const user = await getCurrentUser();
-  if (!user) {
+  if (!user && mode !== "demo") {
     return NextResponse.json({ error: "not signed in." }, { status: 401 });
   }
 
@@ -13,7 +18,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "cartesia voice is not configured." }, { status: 503 });
   }
 
-  const body = await request.json().catch(() => null) as { text?: string } | null;
   const text = body?.text?.trim();
   if (!text) {
     return NextResponse.json({ error: "text is required." }, { status: 400 });

@@ -157,6 +157,7 @@ export function DailyBlocks({
   onDelete,
   onResume,
   onChatAbout,
+  onOpenCalendar,
   pending,
 }: {
   date: Date;
@@ -168,7 +169,8 @@ export function DailyBlocks({
   onEdit: (block: TimeBlock) => void;
   onDelete: (block: TimeBlock) => void;
   onResume: (block: TimeBlock) => void;
-  onChatAbout: (block: TimeBlock) => void;
+  onChatAbout?: (block: TimeBlock) => void;
+  onOpenCalendar?: () => void;
   pending: boolean;
 }) {
   const categoryMap = useMemo(() => createCategoryMetaMap(categories), [
@@ -197,14 +199,26 @@ export function DailyBlocks({
           >
             <Plus className="h-4 w-4" />
           </button>
-          <Link
-            href="/app/calendar"
-            aria-label="open calendar"
-            title="calendar"
-            className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
-          >
-            <CalendarDays className="h-4 w-4" />
-          </Link>
+          {onOpenCalendar ? (
+            <button
+              type="button"
+              onClick={onOpenCalendar}
+              aria-label="open calendar"
+              title="calendar"
+              className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
+            >
+              <CalendarDays className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              href="/app/calendar"
+              aria-label="open calendar"
+              title="calendar"
+              className="alibi-button-teal inline-flex h-11 w-11 items-center justify-center"
+            >
+              <CalendarDays className="h-4 w-4" />
+            </Link>
+          )}
         </div>
       </div>
 

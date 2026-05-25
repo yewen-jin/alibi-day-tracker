@@ -851,6 +851,54 @@ export async function getActiveTimer(): Promise<GetActiveTimerResult> {
   }
 }
 
+export async function getActiveTimerBlock(): Promise<
+  | {
+      type: "loaded"
+      timeBlock: TimeBlock | null
+    }
+  | {
+      type: "error"
+      message: string
+    }
+> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { type: "error", message: "not signed in." }
+  }
+
+  const { data: activeTimer, error: timerError } = await supabase
+    .from("active_timer")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (timerError) {
+    return { type: "error", message: "couldn't load the timer. try again." }
+  }
+
+  if (!activeTimer) {
+    return { type: "loaded", timeBlock: null }
+  }
+
+  const { data: timeBlock, error } = await supabase
+    .from("time_blocks")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("started_at", (activeTimer as ActiveTimer).started_at)
+    .is("ended_at", null)
+    .maybeSingle()
+
+  if (error) {
+    return { type: "error", message: "couldn't load timer details. try again." }
+  }
+
+  return { type: "loaded", timeBlock: (timeBlock as TimeBlock | null) ?? null }
+}
+
 /**
  * Start the current user's timer without overwriting an existing running timer.
  */
@@ -1257,6 +1305,127 @@ export async function stopTimer(input?: StopTimerInput): Promise<StopTimerResult
   return {
     type: "stopped",
     timeBlock,
+  }
+}
+
+/**
+ * Save editable details on the currently running timer without changing its
+ * start time or stopping it. Details are stored on the open time block that
+ * stopTimer later completes.
+ */
+export async function saveActiveTimerDetails(input: StopTimerInput): Promise<SaveBlockResult> {
+  const validatedInput = validateStopTimerInput(input)
+
+  if (validatedInput.type === "error") {
+    return validatedInput
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { type: "error", message: "not signed in." }
+  }
+
+  const { data: activeTimer, error: timerError } = await supabase
+    .from("active_timer")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (timerError) {
+    return { type: "error", message: "couldn't check the timer. try again." }
+  }
+
+  if (!activeTimer) {
+    return { type: "not_found" }
+  }
+
+  const startedAt = new Date(activeTimer.started_at)
+
+  if (Number.isNaN(startedAt.getTime()) || startedAt.getTime() > Date.now() + 5_000) {
+    return { type: "error", message: "timer has an invalid start time." }
+  }
+
+  const resolvedCategory = validatedInput.category
+    ? await ensureCategoryForUser(
+        supabase,
+        user.id,
+        validatedInput.category,
+        validatedInput.categoryId,
+      )
+    : { category: null, categoryId: null }
+  const derivedMarkers = deriveMarkersFromNotes(validatedInput.notes)
+  const values = {
+    user_id: user.id,
+    started_at: activeTimer.started_at,
+    ended_at: null,
+    task_name: validatedInput.taskName,
+    category: resolvedCategory.category,
+    category_id: resolvedCategory.categoryId,
+    hashtags: validatedInput.hashtags,
+    notes: validatedInput.notes,
+    mood: validatedInput.mood,
+    effort_level: validatedInput.effortLevel,
+    satisfaction: validatedInput.satisfaction,
+    avoidance_marker: validatedInput.avoidanceMarker || derivedMarkers.avoidance,
+    hyperfocus_marker: validatedInput.hyperfocusMarker || derivedMarkers.hyperfocus,
+    guilt_marker: validatedInput.guiltMarker || derivedMarkers.guilt,
+    novelty_marker: validatedInput.noveltyMarker,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data: openBlock, error: openBlockError } = await supabase
+    .from("time_blocks")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("started_at", activeTimer.started_at)
+    .is("ended_at", null)
+    .maybeSingle()
+
+  if (openBlockError) {
+    return { type: "error", message: "couldn't check the running block. try again." }
+  }
+
+  const previousNotes = (openBlock as TimeBlock | null)?.notes ?? null
+  const query = openBlock
+    ? supabase
+        .from("time_blocks")
+        .update(values)
+        .eq("id", (openBlock as TimeBlock).id)
+        .eq("user_id", user.id)
+        .select("*")
+        .single()
+    : supabase
+        .from("time_blocks")
+        .insert({
+          ...values,
+          created_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single()
+  const { data: timeBlock, error } = await query
+
+  if (error || !timeBlock) {
+    return { type: "error", message: "couldn't save timer details. try again." }
+  }
+
+  await preserveNotesAndInsights(
+    supabase,
+    user.id,
+    timeBlock as TimeBlock,
+    previousNotes,
+    noteSourceFromInput(input.note_source),
+  )
+  indexTimeBlockAfterResponse(timeBlock as TimeBlock)
+  revalidatePath("/app")
+  invalidateMemoryContextForUser(user.id)
+
+  return {
+    type: "saved",
+    timeBlock: timeBlock as TimeBlock,
   }
 }
 

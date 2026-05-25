@@ -1,5 +1,8 @@
 import type {
   CompanionMessage,
+  EffortLevel,
+  Mood,
+  Satisfaction,
   TimeBlock,
   TimeBlockCategory,
   TimeBlockCategoryRecord,
@@ -17,6 +20,13 @@ export type EditorState = {
   notes: string;
   startedAt: string;
   endedAt: string;
+  mood: Mood | "";
+  effortLevel: EffortLevel | "";
+  satisfaction: Satisfaction | "";
+  avoidanceMarker: boolean;
+  hyperfocusMarker: boolean;
+  guiltMarker: boolean;
+  noveltyMarker: boolean;
 };
 
 export type ChatMessage = {
@@ -30,6 +40,14 @@ export function createEditorState(
   block: TimeBlock,
   isNewlyStopped = false,
 ): EditorState {
+  const startedAt = toDateTimeLocal(block.started_at);
+  let endedAt = toDateTimeLocal(block.ended_at);
+  if (isNewlyStopped && startedAt && startedAt === endedAt) {
+    endedAt = toDateTimeLocal(
+      new Date(new Date(block.ended_at ?? block.started_at).getTime() + 1000).toISOString(),
+    );
+  }
+
   return {
     block,
     isNewlyStopped,
@@ -38,8 +56,15 @@ export function createEditorState(
     category: block.category ?? "",
     hashtags: (block.hashtags ?? []).join(" "),
     notes: block.notes ?? "",
-    startedAt: toDateTimeLocal(block.started_at),
-    endedAt: toDateTimeLocal(block.ended_at),
+    startedAt,
+    endedAt,
+    mood: block.mood ?? "",
+    effortLevel: block.effort_level ?? "",
+    satisfaction: block.satisfaction ?? "",
+    avoidanceMarker: block.avoidance_marker,
+    hyperfocusMarker: block.hyperfocus_marker,
+    guiltMarker: block.guilt_marker,
+    noveltyMarker: block.novelty_marker,
   };
 }
 
@@ -56,6 +81,13 @@ export function createManualEditorState(): EditorState {
     notes: "",
     startedAt: toDateTimeLocal(startedAt.toISOString()),
     endedAt: toDateTimeLocal(endedAt.toISOString()),
+    mood: "",
+    effortLevel: "",
+    satisfaction: "",
+    avoidanceMarker: false,
+    hyperfocusMarker: false,
+    guiltMarker: false,
+    noveltyMarker: false,
   };
 }
 

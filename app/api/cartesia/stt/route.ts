@@ -4,15 +4,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 const CARTESIA_STT_TIMEOUT_MS = 25_000;
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "not signed in." }, { status: 401 });
-  }
-
   const apiKey = process.env.CARTESIA_API_KEY;
   if (!apiKey) {
     console.error("[cartesia-stt]", {
-      user_id: user.id,
+      user_id: null,
       stage: "config",
       error: "CARTESIA_API_KEY missing",
     });
@@ -20,14 +15,24 @@ export async function POST(request: Request) {
   }
 
   const incoming = await request.formData();
+  const mode = incoming.get("mode") === "demo" ? "demo" : "authenticated";
+  const user = await getCurrentUser();
+  if (!user && mode !== "demo") {
+    return NextResponse.json({ error: "not signed in." }, { status: 401 });
+  }
+  const userId = user?.id ?? "demo";
   const file = incoming.get("file");
   if (!(file instanceof File)) {
     console.error("[cartesia-stt]", {
-      user_id: user.id,
+      user_id: userId,
       stage: "validate",
       error: "file missing",
     });
     return NextResponse.json({ error: "audio file is required." }, { status: 400 });
+  }
+
+  if (mode === "demo" && file.size > 8 * 1024 * 1024) {
+    return NextResponse.json({ error: "demo audio is too large." }, { status: 413 });
   }
 
   const model = process.env.CARTESIA_STT_MODEL ?? "ink-whisper";
@@ -60,7 +65,8 @@ export async function POST(request: Request) {
     const aborted = error instanceof DOMException && error.name === "AbortError";
     const message = aborted ? "transcription timed out." : "transcription failed.";
     console.error("[cartesia-stt]", {
-      user_id: user.id,
+      user_id: userId,
+      mode,
       stage: "fetch",
       aborted,
       elapsed_ms: elapsed,
@@ -80,7 +86,8 @@ export async function POST(request: Request) {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     console.error("[cartesia-stt]", {
-      user_id: user.id,
+      user_id: userId,
+      mode,
       stage: "upstream_error",
       status: response.status,
       elapsed_ms: elapsed,
@@ -98,7 +105,8 @@ export async function POST(request: Request) {
 
   const json = await response.json().catch((error) => {
     console.error("[cartesia-stt]", {
-      user_id: user.id,
+      user_id: userId,
+      mode,
       stage: "parse",
       elapsed_ms: elapsed,
       error: error instanceof Error ? error.message : String(error),
@@ -116,7 +124,8 @@ export async function POST(request: Request) {
       : "";
 
   console.info("[cartesia-stt]", {
-    user_id: user.id,
+    user_id: userId,
+    mode,
     stage: "ok",
     status: response.status,
     elapsed_ms: elapsed,

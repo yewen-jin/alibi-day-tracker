@@ -160,6 +160,13 @@ export function CalendarWorkspace({
         ended_at: fromDateTimeLocal(editor.endedAt),
         hashtags: parseHashtags(editor.hashtags),
         notes: editor.notes,
+        mood: editor.mood || null,
+        effort_level: editor.effortLevel || null,
+        satisfaction: editor.satisfaction || null,
+        avoidance_marker: editor.avoidanceMarker,
+        hyperfocus_marker: editor.hyperfocusMarker,
+        guilt_marker: editor.guiltMarker,
+        novelty_marker: editor.noveltyMarker,
         note_source: "manual",
       });
 

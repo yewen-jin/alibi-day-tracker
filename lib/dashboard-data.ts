@@ -449,11 +449,15 @@ export function buildNotesMirrorObservations(
     const notedBlocks = blocks.filter((block) => block.notes?.trim())
     const block = notedBlocks[0]
     if (block) {
-      const exact = insightExcerpt(block.notes)
       observations.push({
         title: "notes are coming through",
         body: `${notedBlocks.length} block${notedBlocks.length === 1 ? "" : "s"} have reflection notes ready for pattern-finding.`,
-        evidence: `${blockEvidenceLabel(block)}: ${quoteEvidence(exact)}`,
+        evidence: notedBlocks
+          .slice(0, 2)
+          .map((notedBlock) =>
+            `${blockEvidenceLabel(notedBlock)}: ${quoteEvidence(insightExcerpt(notedBlock.notes))}`,
+          )
+          .join(" · "),
         sources: notedBlocks.map((notedBlock) => ({
           type: "note",
           written_at: notedBlock.updated_at ?? notedBlock.started_at,
