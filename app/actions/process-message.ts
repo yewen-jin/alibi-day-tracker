@@ -487,20 +487,22 @@ function looksLikeLogAttempt(
   text: string,
   routed: RouterOutput,
 ) {
-  if (routed.intent === "log_block" || routed.intent === "clarify") {
+  if (routed.intent === "log_block") {
     return true;
   }
 
   if (
     routed.started_at ||
     routed.ended_at ||
-    routed.duration_minutes ||
-    routed.category
+    routed.duration_minutes
   ) {
     return true;
   }
 
-  return /\b(log|logged|record|add|save|spent|worked on|finished|completed|did|from \d{1,2}|for \d+)\b/i.test(
+  // Strong, unambiguous log verbs only. Words like "did", "spent", "finished",
+  // "completed", "add" are too common in casual chat and analysis questions
+  // ("how long did i spend?", "what did i do?") to use as fallback signals.
+  return /\b(log|logged|record(?:ed)?|save it|save that|save this|worked on)\b/i.test(
     text,
   );
 }
@@ -628,10 +630,14 @@ function shouldContinuePendingDraft(
     return false;
   }
 
-  if (routed.intent === "log_block" || routed.intent === "clarify") {
+  if (routed.intent === "log_block") {
     return true;
   }
 
+  // For "clarify" intent, only continue if the user's reply actually advanced
+  // the draft. Otherwise (e.g. they changed the subject, asked a question,
+  // pushed back) we should abandon the draft and let chat/analysis handle it
+  // instead of asking the same clarification question on repeat.
   return draftHasClarificationInfo(clarificationDraft);
 }
 
@@ -1035,11 +1041,11 @@ async function routeMessage(
         "",
         "Valid intents: companion_chat, log_block, edit_block, start_timer, stop_timer, analyse_blocks, clarify.",
         "Use companion_chat for ordinary conversation, emotional check-ins, uncertainty, venting, or anything that is not clearly a request to save completed work.",
-        "Use log_block when the user is trying to record, add, save, or log completed work, even if details are missing.",
+        "Use log_block when the user is recording, adding, saving, or logging completed work that happened in the past, as a statement (not a question). Examples: 'log 30 mins of email', 'i did laundry from 2 to 3', 'add a walk this morning'.",
         "Use edit_block when the user is asking to change, correct, rename, retime, recategorize, tag, or update an existing time block.",
         "Use start_timer when they explicitly start a timer, or when ongoing language means the work is still in progress: 'i started X 30 minutes ago', 'i've been doing X for 30 minutes'.",
         "Use stop_timer for explicit timer stop/control.",
-        "Use analyse_blocks when they ask what they did, how long they spent, patterns, or reassurance from saved records.",
+        "Use analyse_blocks whenever the user is ASKING A QUESTION about their saved records: what they did, how long they spent, totals, averages, frequencies, patterns, comparisons, or reassurance. This takes priority over log_block. Examples: 'how many hours do i spend on X', 'on average how long do i X', 'what did i work on yesterday', 'how often do i X', 'how much time on screen this week'. Any message ending with a '?' that references their own activity is almost certainly analyse_blocks, not log_block.",
         "Use clarify only when the new message answers a prior clarification but is still incomplete.",
         "",
         "If a 'Prior draft' is provided, the user may be answering an earlier clarification. Extract any new details from the user message that complete the draft (time range, duration, task name, category, mood, etc.) and return them populated. Use the prior draft's existing values implicitly by only filling in what is newly present. If the message is clearly continuing a draft but still incomplete, set intent=clarify.",
@@ -1090,10 +1096,41 @@ async function routeMessage(
       ].join("\n"),
     });
 
-    return normalizeRouterOutput(output, text);
+    return applyRouterSafetyNet(normalizeRouterOutput(output, text), text);
   } catch {
     return normalizeRouterOutput(null, text);
   }
+}
+
+// Safety net for the small/fast router model: if the message is unambiguously
+// a question about the user's own past activity, force analyse_blocks even
+// when the router said log_block or companion_chat. Without this, a question
+// like "how many hours did i spend on screen?" can leak into the log-block
+// path, where it gets stuck asking "what time was that?" on repeat.
+function applyRouterSafetyNet(
+  routed: RouterOutput & { draft: CompanionDraft },
+  text: string,
+): RouterOutput & { draft: CompanionDraft } {
+  if (
+    routed.intent === "start_timer" ||
+    routed.intent === "stop_timer" ||
+    routed.intent === "edit_block" ||
+    routed.intent === "analyse_blocks"
+  ) {
+    return routed;
+  }
+
+  const endsWithQuestion = /\?\s*$/.test(text);
+  const hasAnalysisCue =
+    /\b(how (?:many|much|long|often)|on average|per (?:day|week|month)|how do i|what did i|what have i|when did i|when do i|where did i|how (?:much|long) did i|am i|are most of|most of my|patterns?|trend|compare|comparison|usually|typically|every ?day|everyday)\b/i.test(
+      text,
+    );
+
+  if (endsWithQuestion && hasAnalysisCue) {
+    return { ...routed, intent: "analyse_blocks" };
+  }
+
+  return routed;
 }
 
 async function completeDraftFromClarification(
