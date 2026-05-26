@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Loader2 } from "lucide-react";
 import { ActiveTimerCard } from "@/components/active-timer-card";
+import { CategoryPicker } from "@/components/category-picker";
 import { DailyBlocks } from "@/components/time-block-list";
 import {
   createEditorState,
@@ -539,24 +540,22 @@ function ActiveTimerDetailsEditor({
           <input
             value={editor.taskName}
             onChange={(event) => setEditor({ ...editor, taskName: event.target.value })}
-            className="alibi-input h-10"
+            className="alibi-input h-11"
             placeholder="what is running?"
           />
         </label>
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           category
-          <select
+          <CategoryPicker
             value={editor.category}
-            onChange={(event) => setEditor({ ...editor, category: event.target.value })}
-            className="alibi-input h-10"
-          >
-            <option value="">unset</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.slug}>
-                {category.name}
-              </option>
-            ))}
-          </select>
+            categories={categories}
+            onChange={(val) =>
+              setEditor({
+                ...editor,
+                category: val as EditorState["category"],
+              })
+            }
+          />
         </label>
       </div>
 

@@ -1307,7 +1307,7 @@ function DemoAiSettingsPanel({
           onClick={onClose}
           aria-label="close ai settings"
           title="close"
-          className="flex h-9 w-9 items-center justify-center rounded-2xl text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-pink/15 hover:text-alibi-pink"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-alibi-teal transition hover:-translate-y-0.5 hover:bg-alibi-pink hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
