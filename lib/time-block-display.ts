@@ -1,8 +1,37 @@
 import type {
   ActiveTimer,
+  EffortLevel,
+  Mood,
+  Satisfaction,
   TimeBlockCategory,
   TimeBlockCategoryRecord,
 } from "@/lib/types";
+
+export const MOOD_OPTIONS: { value: Mood | ""; label: string }[] = [
+  { value: "", label: "unset" },
+  { value: "joyful", label: "joyful" },
+  { value: "neutral", label: "neutral" },
+  { value: "flat", label: "flat" },
+  { value: "anxious", label: "anxious" },
+  { value: "guilty", label: "guilty" },
+  { value: "proud", label: "proud" },
+];
+
+export const EFFORT_OPTIONS: { value: EffortLevel | ""; label: string }[] = [
+  { value: "", label: "unset" },
+  { value: "easy", label: "easy" },
+  { value: "medium", label: "medium" },
+  { value: "hard", label: "hard" },
+  { value: "grind", label: "grind" },
+];
+
+export const SATISFACTION_OPTIONS: { value: Satisfaction | ""; label: string }[] = [
+  { value: "", label: "unset" },
+  { value: "satisfied", label: "satisfied" },
+  { value: "mixed", label: "mixed" },
+  { value: "frustrated", label: "frustrated" },
+  { value: "unclear", label: "unclear" },
+];
 
 export const DEFAULT_CATEGORY_COLORS: Record<string, string> = {
   deep_work: "#3253C7",

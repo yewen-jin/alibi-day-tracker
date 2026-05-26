@@ -10,7 +10,6 @@ import {
 } from "react";
 import {
   CalendarDays,
-  ChevronDown,
   Loader2,
   Mic,
   MessageCircle,
@@ -24,6 +23,8 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import { CategoryPicker } from "@/components/category-picker";
+import { Dropdown } from "@/components/dropdown";
 import { VoiceCaptureStatusRow } from "@/components/voice-capture-status";
 import type {
   CompanionMessage,
@@ -39,11 +40,14 @@ import { voiceDebugLog } from "@/lib/voice-recorder-stop";
 import { slugifyCategoryName } from "@/lib/block-draft-utils";
 import {
   createCategoryMetaMap,
+  EFFORT_OPTIONS,
   formatChatTimestamp,
   formatDateHeading,
   formatDuration,
   formatTime,
   getCategoryMeta,
+  MOOD_OPTIONS,
+  SATISFACTION_OPTIONS,
   toDateTimeLocal,
 } from "@/lib/time-block-display";
 import { cn } from "@/lib/utils";
@@ -452,144 +456,6 @@ export function CompanionChatPanel({
   );
 }
 
-function CategoryPicker({
-  value,
-  categories,
-  onChange,
-}: {
-  value: string;
-  categories: TimeBlockCategoryRecord[];
-  onChange: (val: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [addingNew, setAddingNew] = useState(false);
-  const [newValue, setNewValue] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-  const newInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setAddingNew(false);
-        setNewValue("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  useEffect(() => {
-    if (addingNew) newInputRef.current?.focus();
-  }, [addingNew]);
-
-  const selected = categories.find(
-    (c) => c.slug === value || c.name.toLowerCase() === value.toLowerCase(),
-  );
-  const displayName = selected?.name ?? (value || null);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((o) => !o);
-          setAddingNew(false);
-          setNewValue("");
-        }}
-        className="alibi-input flex h-11 w-full items-center justify-between gap-2 text-left"
-      >
-        <span
-          className={cn(
-            "flex items-center gap-2 text-sm font-semibold",
-            displayName ? "text-alibi-ink" : "text-alibi-teal/50",
-          )}
-        >
-          {selected && (
-            <span
-              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-              style={{ backgroundColor: selected.color }}
-            />
-          )}
-          {displayName ?? "choose or add a category"}
-        </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 flex-shrink-0 text-alibi-teal transition-transform duration-150",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-
-      {open && (
-        <div className="alibi-card absolute z-50 mt-1 w-full overflow-hidden p-1">
-          {!addingNew ? (
-            <button
-              type="button"
-              onClick={() => setAddingNew(true)}
-              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-semibold text-alibi-teal transition hover:bg-alibi-lavender/20"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              add new
-            </button>
-          ) : (
-            <div className="px-1 pb-1 pt-0.5">
-              <input
-                ref={newInputRef}
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newValue.trim()) {
-                    onChange(newValue.trim());
-                    setOpen(false);
-                    setAddingNew(false);
-                    setNewValue("");
-                  } else if (e.key === "Escape") {
-                    setAddingNew(false);
-                    setNewValue("");
-                  }
-                }}
-                className="alibi-input h-9 w-full text-sm"
-                placeholder="new category name, press enter"
-              />
-            </div>
-          )}
-
-          <div className="my-1 border-t border-alibi-blue/10" />
-
-          <div className="relative -mx-1 -mb-1">
-            <div className="max-h-48 overflow-y-auto px-1 pb-6">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(cat.slug);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-semibold text-alibi-ink transition hover:bg-alibi-lavender/20",
-                    value === cat.slug && "bg-alibi-blue/10 text-alibi-blue",
-                  )}
-                >
-                  <span
-                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-            {categories.length > 4 && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-white to-transparent" />
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function BlockMetadataFields({
   editor,
   setEditor,
@@ -609,61 +475,44 @@ function BlockMetadataFields({
       <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           mood
-          <select
+          <Dropdown
             value={editor.mood}
-            onChange={(event) =>
-              setEditor({ ...editor, mood: event.target.value as Mood | "" })
+            options={MOOD_OPTIONS}
+            onChange={(val) =>
+              setEditor({ ...editor, mood: val as Mood | "" })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="joyful">joyful</option>
-            <option value="neutral">neutral</option>
-            <option value="flat">flat</option>
-            <option value="anxious">anxious</option>
-            <option value="guilty">guilty</option>
-            <option value="proud">proud</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
 
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           effort
-          <select
+          <Dropdown
             value={editor.effortLevel}
-            onChange={(event) =>
+            options={EFFORT_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                effortLevel: event.target.value as EffortLevel | "",
+                effortLevel: val as EffortLevel | "",
               })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="easy">easy</option>
-            <option value="medium">medium</option>
-            <option value="hard">hard</option>
-            <option value="grind">grind</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
 
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           satisfaction
-          <select
+          <Dropdown
             value={editor.satisfaction}
-            onChange={(event) =>
+            options={SATISFACTION_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                satisfaction: event.target.value as Satisfaction | "",
+                satisfaction: val as Satisfaction | "",
               })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="satisfied">satisfied</option>
-            <option value="mixed">mixed</option>
-            <option value="frustrated">frustrated</option>
-            <option value="unclear">unclear</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
       </div>
 

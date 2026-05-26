@@ -11,6 +11,7 @@ import {
   testAiSettings,
   updateAiModels,
 } from "@/app/actions/ai-settings";
+import { Dropdown } from "@/components/dropdown";
 import type { AiProfileSnapshot, AiSettingsSnapshot } from "@/lib/ai-settings";
 import { AI_PROVIDERS } from "@/lib/ai-providers";
 import { AI_PROVIDER_PRESETS, findPresetById, type AiProviderPreset } from "@/lib/ai-provider-presets";
@@ -380,17 +381,15 @@ export function AiSettingsForm({ initialSettings }: AiSettingsFormProps) {
           <div className="mt-5 grid gap-4">
             <label className="grid gap-1.5">
               <span className="text-sm font-black text-alibi-blue">preset</span>
-              <select
+              <Dropdown
                 value={presetId}
-                onChange={(event) => handlePresetChange(event.target.value)}
-                className="alibi-input h-11"
-              >
-                {AI_PROVIDER_PRESETS.map((item: AiProviderPreset) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+                options={AI_PROVIDER_PRESETS.map((item: AiProviderPreset) => ({
+                  value: item.id,
+                  label: item.label,
+                }))}
+                onChange={handlePresetChange}
+                placeholder="select a preset"
+              />
               {preset && (
                 <span className="text-xs font-semibold leading-5 text-alibi-teal">
                   {preset.notes}

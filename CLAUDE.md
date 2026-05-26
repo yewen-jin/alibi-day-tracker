@@ -72,7 +72,6 @@ Single source of truth: **`app/globals.css`** + Tailwind v4 theme. See **`STYLES
 - Use alibi component classes: `.alibi-card`, `.alibi-card-pop`, `.alibi-pill`, `.alibi-inset`, `.alibi-input`, `.alibi-button-primary`, `.alibi-button-secondary`, `.alibi-chip`, `.alibi-label`
 - Color tokens: `alibi-ink`, `alibi-blue`, `alibi-pink`, `alibi-teal`, `alibi-lavender`
 - Fonts: Figtree (sans), JetBrains Mono (mono)
-- `lib/ui-styles.ts` is deprecated — exists only because an unused component imports it
 
 ## Environment Variables
 

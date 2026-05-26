@@ -79,7 +79,7 @@ export function ProjectDistribution({
               className="flex items-center gap-3 text-base"
             >
               <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{
                   background: meta.color,
                 }}
