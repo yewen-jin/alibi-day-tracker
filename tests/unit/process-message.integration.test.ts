@@ -220,8 +220,20 @@ function draft(overrides: Partial<CompanionDraft>): CompanionDraft & { intent: s
 
 async function loadProcessMessage(routeOutput: CompanionDraft & { intent: string }) {
   const memory = createSupabaseMemory();
-  const generateText = vi.fn(async (options: { output?: unknown }) => {
-    if (options.output) return { output: routeOutput };
+  const generateText = vi.fn(async (options: { output?: unknown; prompt?: string; system?: string }) => {
+    if (options.output) {
+      const prompt = [options.system ?? "", options.prompt ?? ""].join("\n");
+      if (prompt.includes("Extract a grounded evidence synthesis")) {
+        return {
+          output: {
+            summary: "screen time appears in the saved record",
+            key_evidence: ["screen time"],
+            pattern_hint: null,
+          },
+        };
+      }
+      return { output: routeOutput };
+    }
     return { text: "logged." };
   });
   const saveBlock = vi.fn(async (input: Record<string, unknown>) => ({
@@ -263,6 +275,26 @@ async function loadProcessMessage(routeOutput: CompanionDraft & { intent: string
   }));
   vi.doMock("@/lib/chat-insights", () => ({
     generateCompanionMessageInsightRecord: vi.fn(async () => null),
+    deriveCompanionMessageInsightRecord: vi.fn(() => null),
+  }));
+  vi.doMock("@/lib/memory-context", () => ({
+    buildCompanionMemoryContext: vi.fn(async () => ({
+      range: { scope: "today", label: "today" },
+      blocks: [],
+      chatInsights: [],
+      recentMessages: [],
+      evidenceText: "(empty)",
+    })),
+    formatBlockForMemory: vi.fn(() => "formatted block"),
+  }));
+  vi.doMock("@/lib/rag/retriever", () => ({
+    retrieveMemoryContext: vi.fn(async () => ({
+      chunks: [],
+      sourceSummaries: [],
+      score: 0,
+      dateWindow: null,
+      promptText: "(empty)",
+    })),
   }));
   vi.doMock("@/lib/rag/indexer", () => ({
     indexMemoryForCompanionMessage: vi.fn(async () => undefined),
@@ -417,5 +449,24 @@ describe("processCompanionMessage semantic duration flows", () => {
         note_source: "chat",
       }),
     );
+  });
+
+  it("routes activity questions to analysis even if the router says log_block", async () => {
+    const { processCompanionMessage, saveBlock, startTimer } = await loadProcessMessage(
+      draft({
+        intent: "log_block",
+        task_name: "screen time",
+        duration_minutes: null,
+      }),
+    );
+
+    const result = await processCompanionMessage({
+      text: "how many hours did i spend on screen?",
+      timezone: "Europe/London",
+    });
+
+    expect(result.type).toBe("analysis");
+    expect(saveBlock).not.toHaveBeenCalled();
+    expect(startTimer).not.toHaveBeenCalled();
   });
 });

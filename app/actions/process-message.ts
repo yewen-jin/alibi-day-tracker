@@ -18,7 +18,10 @@ import type {
   CategoryInference,
 } from "@/lib/block-draft-utils";
 import { alibiCompanionGuide } from "@/lib/companion-voice";
-import { generateCompanionMessageInsightRecord } from "@/lib/chat-insights";
+import {
+  deriveCompanionMessageInsightRecord,
+  generateCompanionMessageInsightRecord,
+} from "@/lib/chat-insights";
 import {
   buildCompanionMemoryContext,
   formatBlockForMemory,
@@ -38,6 +41,7 @@ import type {
   CompanionConversation,
   CompanionConversationContextSnapshot,
   CompanionMessage,
+  CompanionMessageInsight,
   CompanionMessageType,
   CompanionThreadState,
   CompanionTimeBlockContext,
@@ -500,8 +504,9 @@ function looksLikeLogAttempt(
   }
 
   // Strong, unambiguous log verbs only. Words like "did", "spent", "finished",
-  // "completed", "add" are too common in casual chat and analysis questions
-  // ("how long did i spend?", "what did i do?") to use as fallback signals.
+  // "completed", and "add" are too common in casual chat and analysis
+  // questions ("how long did i spend?", "what did i do?") to use as fallback
+  // signals.
   return /\b(log|logged|record(?:ed)?|save it|save that|save this|worked on)\b/i.test(
     text,
   );
@@ -855,6 +860,27 @@ async function upsertCompanionMessageInsight(
     return;
   }
 
+  await upsertCompanionMessageInsightRecord(supabase, insight);
+}
+
+async function upsertDerivedCompanionMessageInsight(
+  supabase: Supabase,
+  message: CompanionMessage,
+  conversation: CompanionConversation,
+) {
+  const insight = deriveCompanionMessageInsightRecord(message, conversation);
+
+  if (!insight) {
+    return;
+  }
+
+  await upsertCompanionMessageInsightRecord(supabase, insight);
+}
+
+async function upsertCompanionMessageInsightRecord(
+  supabase: Supabase,
+  insight: CompanionMessageInsight,
+) {
   const { error } = await supabase.from("companion_message_insights").upsert(
     {
       user_id: insight.user_id,
@@ -879,8 +905,8 @@ async function upsertCompanionMessageInsight(
 
   if (error) {
     console.error("failed to upsert companion message insight", {
-      messageId: message.id,
-      userId: message.user_id,
+      messageId: insight.message_id,
+      userId: insight.user_id,
       error: error.message,
     });
     return;
@@ -888,8 +914,8 @@ async function upsertCompanionMessageInsight(
 
   await indexMemoryForCompanionMessageInsight(insight).catch((indexError) => {
     console.error("failed to index companion message insight", {
-      messageId: message.id,
-      userId: message.user_id,
+      messageId: insight.message_id,
+      userId: insight.user_id,
       error: indexError instanceof Error ? indexError.message : String(indexError),
     });
   });
@@ -1184,38 +1210,6 @@ async function completeDraftFromClarification(
       guilt_marker: false,
       novelty_marker: false,
     };
-  }
-}
-
-async function makeAck(
-  models: ResolvedAiModels,
-  kind: "logged" | "started" | "stopped",
-  subject: string,
-) {
-  const fallback =
-    kind === "started"
-      ? "timer running."
-      : kind === "stopped"
-        ? "timer stopped."
-        : "logged.";
-
-  try {
-    const { text } = await generateText({
-      model: models.fastModel,
-      prompt: [
-        "You are Alibi. Write one short lowercase acknowledgment.",
-        "Rules: 2 to 5 words, end with a period, no emojis, no exclamation marks, no praise.",
-        `Action: ${kind}`,
-        `Subject: ${subject}`,
-      ].join("\n"),
-    });
-    const cleaned = text
-      .trim()
-      .replace(/^["']|["']$/g, "")
-      .toLowerCase();
-    return cleaned && cleaned.length <= 48 ? cleaned : fallback;
-  } catch {
-    return fallback;
   }
 }
 
@@ -1678,25 +1672,6 @@ export async function processCompanionMessage(
     }),
   );
 
-  // Run chat-insight extraction inline. Tempting to wrap in `after()` for
-  // latency, but the Supabase client captured here reads cookies on every
-  // request, and Next 16 closes the cookies handle once the response ships —
-  // any upsert that fires from `after()` fails silently and the chat mirror
-  // loses entries. The extraction is fast-model now, so the latency cost is
-  // small.
-  await upsertCompanionMessageInsight(
-    supabase,
-    userMessage.message,
-    conversation,
-    models,
-  ).catch((error) => {
-    console.error("failed to generate companion message insight", {
-      messageId: userMessage.message.id,
-      userId: user.id,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  });
-
   const messagesAfterUser = await fetchCompanionMessagesForConversation(
     supabase,
     user.id,
@@ -1706,6 +1681,39 @@ export async function processCompanionMessage(
     messagesAfterUser.type === "loaded"
       ? messagesAfterUser.messages.slice(-6)
       : [userMessage.message];
+  let didSaveUserInsight = false;
+
+  const saveUserInsight = async (mode: "ai" | "derived" = "ai") => {
+    if (didSaveUserInsight) {
+      return;
+    }
+
+    didSaveUserInsight = true;
+
+    try {
+      if (mode === "derived") {
+        await upsertDerivedCompanionMessageInsight(
+          supabase,
+          userMessage.message,
+          conversation,
+        );
+        return;
+      }
+
+      await upsertCompanionMessageInsight(
+        supabase,
+        userMessage.message,
+        conversation,
+        models,
+      );
+    } catch (error) {
+      console.error("failed to generate companion message insight", {
+        messageId: userMessage.message.id,
+        userId: user.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   const finishWithAssistant = async <
     T extends Omit<
@@ -1751,6 +1759,7 @@ export async function processCompanionMessage(
         : null;
 
       if (!currentBlock) {
+        await saveUserInsight("derived");
         return finishWithAssistant(
           { type: "error", message: "time block was not found." },
           "time block was not found.",
@@ -1765,6 +1774,7 @@ export async function processCompanionMessage(
 
       if (!window || !mergedDraft.task_name?.trim() || !category) {
         const question = clarificationQuestion(mergedDraft);
+        await saveUserInsight("derived");
         return finishWithAssistant(
           {
             type: "clarify",
@@ -1785,6 +1795,7 @@ export async function processCompanionMessage(
       });
 
       if (result.type === "saved") {
+        await saveUserInsight("derived");
         const ack = await makeSavedBlockReply({
           models,
           action: "logged",
@@ -1803,6 +1814,7 @@ export async function processCompanionMessage(
       }
 
       if (result.type === "not_found") {
+        await saveUserInsight("derived");
         return finishWithAssistant(
           { type: "error", message: "time block was not found." },
           "time block was not found.",
@@ -1810,9 +1822,11 @@ export async function processCompanionMessage(
         );
       }
 
+      await saveUserInsight("derived");
       return finishWithAssistant(result, result.message, "error");
     }
 
+    await saveUserInsight();
     const message = await timeBlockCompanionChat(
       models,
       trimmed,
@@ -1901,7 +1915,8 @@ export async function processCompanionMessage(
     const result = await startTimer(draftToStartTimerInput(mergedDraft));
     if (result.type === "started") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
-      const ack = await makeAck(models, "started", mergedDraft.task_name ?? "timer");
+      await saveUserInsight("derived");
+      const ack = "timer running.";
       return finishWithAssistant(
         {
           type: "timer_started",
@@ -1915,6 +1930,7 @@ export async function processCompanionMessage(
 
     if (result.type === "already_running") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
+      await saveUserInsight("derived");
       return finishWithAssistant(
         {
           type: "timer_already_running",
@@ -1926,6 +1942,7 @@ export async function processCompanionMessage(
       );
     }
 
+    await saveUserInsight("derived");
     return finishWithAssistant(result, result.message, "error");
   }
 
@@ -1947,6 +1964,7 @@ export async function processCompanionMessage(
 
     if (result.type === "stopped") {
       await resolvePendingDraft(supabase, user.id, conversation.id);
+      await saveUserInsight("derived");
       const ack = await makeSavedBlockReply({
         models,
         action: "stopped",
@@ -1965,6 +1983,7 @@ export async function processCompanionMessage(
     }
 
     if (result.type === "not_running") {
+      await saveUserInsight("derived");
       return finishWithAssistant(
         { type: "timer_not_running", message: "no timer is running." },
         "no timer is running.",
@@ -1972,10 +1991,12 @@ export async function processCompanionMessage(
       );
     }
 
+    await saveUserInsight("derived");
     return finishWithAssistant(result, result.message, "error");
   }
 
   if (routed.intent === "analyse_blocks") {
+    await saveUserInsight();
     const reply = await analyseBlocks({
       models,
       supabase,
@@ -2001,6 +2022,7 @@ export async function processCompanionMessage(
       await resolvePendingDraft(supabase, user.id, conversation.id);
     }
 
+    await saveUserInsight();
     const reply = await companionChat({
       models,
       supabase,
@@ -2025,6 +2047,7 @@ export async function processCompanionMessage(
   if (!window) {
     const question = clarificationQuestion(mergedDraft);
     await savePendingDraft(supabase, user.id, conversation.id, mergedDraft);
+    await saveUserInsight("derived");
     return finishWithAssistant(
       {
         type: "clarify",
@@ -2039,6 +2062,7 @@ export async function processCompanionMessage(
   if (!mergedDraft.task_name?.trim()) {
     const question = clarificationQuestion(mergedDraft);
     await savePendingDraft(supabase, user.id, conversation.id, mergedDraft);
+    await saveUserInsight("derived");
     return finishWithAssistant(
       {
         type: "clarify",
@@ -2054,6 +2078,7 @@ export async function processCompanionMessage(
   if (!category) {
     const question = clarificationQuestion(mergedDraft);
     await savePendingDraft(supabase, user.id, conversation.id, mergedDraft);
+    await saveUserInsight("derived");
     return finishWithAssistant(
       {
         type: "clarify",
@@ -2072,6 +2097,7 @@ export async function processCompanionMessage(
 
   if (result.type === "saved") {
     await resolvePendingDraft(supabase, user.id, conversation.id);
+    await saveUserInsight("derived");
     const ack = await makeSavedBlockReply({
       models,
       action: "logged",
@@ -2090,6 +2116,7 @@ export async function processCompanionMessage(
   }
 
   if (result.type === "not_found") {
+    await saveUserInsight("derived");
     return finishWithAssistant(
       { type: "error", message: "time block was not found." },
       "time block was not found.",
@@ -2097,6 +2124,7 @@ export async function processCompanionMessage(
     );
   }
 
+  await saveUserInsight("derived");
   return finishWithAssistant(result, result.message, "error");
 }
 
