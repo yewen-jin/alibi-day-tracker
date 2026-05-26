@@ -640,9 +640,9 @@ function shouldContinuePendingDraft(
   }
 
   // For "clarify" intent, only continue if the user's reply actually advanced
-  // the draft. Otherwise (e.g. they changed the subject, asked a question, or
-  // pushed back) abandon the draft and let chat/analysis handle it instead of
-  // asking the same clarification question on repeat.
+  // the draft. Otherwise (e.g. they changed the subject, asked a question,
+  // pushed back) we should abandon the draft and let chat/analysis handle it
+  // instead of asking the same clarification question on repeat.
   return draftHasClarificationInfo(clarificationDraft);
 }
 
