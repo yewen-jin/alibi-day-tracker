@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { CategoryPicker } from "@/components/category-picker";
+import { Dropdown } from "@/components/dropdown";
 import { VoiceCaptureStatusRow } from "@/components/voice-capture-status";
 import type {
   CompanionMessage,
@@ -39,11 +40,14 @@ import { voiceDebugLog } from "@/lib/voice-recorder-stop";
 import { slugifyCategoryName } from "@/lib/block-draft-utils";
 import {
   createCategoryMetaMap,
+  EFFORT_OPTIONS,
   formatChatTimestamp,
   formatDateHeading,
   formatDuration,
   formatTime,
   getCategoryMeta,
+  MOOD_OPTIONS,
+  SATISFACTION_OPTIONS,
   toDateTimeLocal,
 } from "@/lib/time-block-display";
 import { cn } from "@/lib/utils";
@@ -471,61 +475,44 @@ function BlockMetadataFields({
       <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           mood
-          <select
+          <Dropdown
             value={editor.mood}
-            onChange={(event) =>
-              setEditor({ ...editor, mood: event.target.value as Mood | "" })
+            options={MOOD_OPTIONS}
+            onChange={(val) =>
+              setEditor({ ...editor, mood: val as Mood | "" })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="joyful">joyful</option>
-            <option value="neutral">neutral</option>
-            <option value="flat">flat</option>
-            <option value="anxious">anxious</option>
-            <option value="guilty">guilty</option>
-            <option value="proud">proud</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
 
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           effort
-          <select
+          <Dropdown
             value={editor.effortLevel}
-            onChange={(event) =>
+            options={EFFORT_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                effortLevel: event.target.value as EffortLevel | "",
+                effortLevel: val as EffortLevel | "",
               })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="easy">easy</option>
-            <option value="medium">medium</option>
-            <option value="hard">hard</option>
-            <option value="grind">grind</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
 
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           satisfaction
-          <select
+          <Dropdown
             value={editor.satisfaction}
-            onChange={(event) =>
+            options={SATISFACTION_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                satisfaction: event.target.value as Satisfaction | "",
+                satisfaction: val as Satisfaction | "",
               })
             }
-            className="alibi-input h-11"
-          >
-            <option value="">unset</option>
-            <option value="satisfied">satisfied</option>
-            <option value="mixed">mixed</option>
-            <option value="frustrated">frustrated</option>
-            <option value="unclear">unclear</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
       </div>
 

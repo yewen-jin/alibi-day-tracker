@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import { ActiveTimerCard } from "@/components/active-timer-card";
 import { CategoryPicker } from "@/components/category-picker";
 import { DailyBlocks } from "@/components/time-block-list";
+import { Dropdown } from "@/components/dropdown";
 import {
   createEditorState,
   createManualEditorState,
@@ -25,10 +26,13 @@ import type {
 } from "@/lib/alibi-workspace-store";
 import type { ActiveTimer, TimeBlock, TimeBlockCategoryRecord } from "@/lib/types";
 import {
+  EFFORT_OPTIONS,
   FALLBACK_CATEGORIES,
   fromDateTimeLocal,
   getTodayRange,
+  MOOD_OPTIONS,
   parseHashtags,
+  SATISFACTION_OPTIONS,
   toDateTimeLocal,
 } from "@/lib/time-block-display";
 
@@ -582,59 +586,42 @@ function ActiveTimerDetailsEditor({
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           mood
-          <select
+          <Dropdown
             value={editor.mood}
-            onChange={(event) =>
-              setEditor({ ...editor, mood: event.target.value as EditorState["mood"] })
+            options={MOOD_OPTIONS}
+            onChange={(val) =>
+              setEditor({ ...editor, mood: val as EditorState["mood"] })
             }
-            className="alibi-input h-10"
-          >
-            <option value="">unset</option>
-            <option value="joyful">joyful</option>
-            <option value="neutral">neutral</option>
-            <option value="flat">flat</option>
-            <option value="anxious">anxious</option>
-            <option value="guilty">guilty</option>
-            <option value="proud">proud</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           effort
-          <select
+          <Dropdown
             value={editor.effortLevel}
-            onChange={(event) =>
+            options={EFFORT_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                effortLevel: event.target.value as EditorState["effortLevel"],
+                effortLevel: val as EditorState["effortLevel"],
               })
             }
-            className="alibi-input h-10"
-          >
-            <option value="">unset</option>
-            <option value="easy">easy</option>
-            <option value="medium">medium</option>
-            <option value="hard">hard</option>
-            <option value="grind">grind</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           satisfaction
-          <select
+          <Dropdown
             value={editor.satisfaction}
-            onChange={(event) =>
+            options={SATISFACTION_OPTIONS}
+            onChange={(val) =>
               setEditor({
                 ...editor,
-                satisfaction: event.target.value as EditorState["satisfaction"],
+                satisfaction: val as EditorState["satisfaction"],
               })
             }
-            className="alibi-input h-10"
-          >
-            <option value="">unset</option>
-            <option value="satisfied">satisfied</option>
-            <option value="mixed">mixed</option>
-            <option value="frustrated">frustrated</option>
-            <option value="unclear">unclear</option>
-          </select>
+            placeholder="unset"
+          />
         </label>
       </div>
 
