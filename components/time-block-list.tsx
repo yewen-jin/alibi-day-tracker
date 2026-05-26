@@ -225,7 +225,7 @@ export function DailyBlocks({
       <div className="mt-5">
         {loading ? (
           <div className="flex min-h-72 items-center justify-center text-alibi-teal">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-alibi-teal/30 border-t-alibi-teal" />
+            <div className="h-5 w-5 animate-spin rounded-full border border-alibi-teal/40 border-t-alibi-teal" />
           </div>
         ) : blocks.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-alibi-lavender/40 bg-alibi-lavender/10 px-6 text-center text-sm font-semibold leading-6 text-alibi-teal">

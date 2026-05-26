@@ -33,7 +33,7 @@ export function DashboardTabsClient({
     <div>
       <nav
         aria-label="dashboard views"
-        className="flex flex-col gap-2 rounded-2xl border border-alibi-blue/12 bg-white p-3 shadow-[0_1px_3px_rgba(50,83,199,0.06),0_6px_20px_rgba(50,83,199,0.09)] sm:flex-row sm:items-center sm:gap-2 sm:rounded-full sm:p-1.5 sm:pl-3"
+        className="alibi-card flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-2 sm:rounded-full sm:p-1.5 sm:pl-3"
       >
         <span className="shrink-0 px-2 text-xs font-black uppercase tracking-[0.12em] text-alibi-teal sm:px-0">
           view

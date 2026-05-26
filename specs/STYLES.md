@@ -278,16 +278,3 @@ font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal
 | `.alibi-record-pulse` | Voice button scale 1→1.05 while recording (2s loop) |
 | `.alibi-listen-dot` | Listening indicator ring breath (2.4s loop) |
 
----
-
-## deprecated
-
-`lib/ui-styles.ts` exists only because one unused component imports it. Do not use in new code.
-
-| Legacy | Replacement |
-|---|---|
-| `GLASS_PANEL_STYLE` | `.alibi-card` |
-| `GLASS_PILL_STYLE` | `.alibi-pill` |
-| `PAPER_INSET_STYLE` | `.alibi-inset` |
-| `PRIMARY_BUTTON_STYLE` | `.alibi-button-primary` |
-| `ALIBI.blue` etc. | `text-alibi-blue` etc. |
