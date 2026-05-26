@@ -35,6 +35,7 @@ import { generateDemoBlockInsight, processDemoCompanionMessage } from "@/app/act
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import { CalendarView } from "@/components/dashboard/calendar-view"
 import { AlibiWorkspace } from "@/components/alibi-workspace"
+import { Dropdown } from "@/components/dropdown"
 import {
   BlockEditor as SharedBlockEditor,
   CompanionChatPanel as SharedCompanionChatPanel,
@@ -1316,19 +1317,19 @@ function DemoAiSettingsPanel({
       <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.2fr)]">
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
           provider
-          <select
+          <Dropdown
             value={settings.provider}
-            onChange={(event) =>
+            options={[
+              { value: "openai_compatible", label: "openai-compatible" },
+              { value: "anthropic", label: "anthropic messages api" },
+            ]}
+            onChange={(val) =>
               setSettings({
                 ...settings,
-                provider: event.target.value === "anthropic" ? "anthropic" : "openai_compatible",
+                provider: val === "anthropic" ? "anthropic" : "openai_compatible",
               })
             }
-            className="alibi-input h-11"
-          >
-            <option value="openai_compatible">openai-compatible</option>
-            <option value="anthropic">anthropic messages api</option>
-          </select>
+          />
         </label>
 
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
