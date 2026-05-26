@@ -1,7 +1,9 @@
 import Link from "next/link"
 import {
   ArrowRight,
+  BarChart3,
   BookOpen,
+  CalendarRange,
   Heart,
   Lock,
   MessageCircleQuestion,
@@ -49,6 +51,7 @@ const SECTIONS: WikiSection[] = [
       "the general companion chat can start or stop the timer, add a completed block, or ask for missing details.",
       "each completed block can open its own companion thread for reflection about that block.",
       "derived insights are stored beside your notes, but they never replace the original text.",
+      "authenticated accounts also index source-linked memory chunks so later questions can retrieve relevant blocks, notes, insights, and chat turns.",
     ],
   },
   {
@@ -80,6 +83,51 @@ const SECTIONS: WikiSection[] = [
       "ask for evidence-backed reflections, such as what your notes show this week.",
       "use it when you feel like you did nothing; it can read saved blocks back with specifics.",
       "use chat about this on a saved block when you want reflection scoped to one block and its note.",
+      "use voice when typing is too much: push to talk, stop recording, review the registered transcript, then let it submit through the same companion path.",
+    ],
+  },
+  {
+    id: "retrieval",
+    icon: SearchCheck,
+    title: "how retrieval works now",
+    intro:
+      "alibi's current memory layer combines deterministic date-scoped SQL context with vector search over source-linked memory chunks. it is retrieval over your saved evidence, not provider-native model memory.",
+    points: [
+      "default scope is today; language can expand scope to yesterday, the last few days, week, month, or all saved memory.",
+      "SQL context loads completed blocks, note insights, linked block chat, chat-derived insights, and recent visible messages in the relevant range.",
+      "vector RAG searches indexed chunks from time blocks, note versions, block insights, companion messages, and companion message insights.",
+      "retrieval keeps source type, source id, source date, similarity, and chunk metadata so answers can stay tied to dated evidence.",
+      "when vector retrieval is unavailable or too sparse, alibi falls back to the SQL memory packet rather than inventing a broader story.",
+      "block-specific chats do not use broad retrieval; they stay scoped to the fixed block context.",
+    ],
+  },
+  {
+    id: "dashboard",
+    icon: BarChart3,
+    title: "dashboard and custom views",
+    intro:
+      "the dashboard is a mirror for saved evidence, not a score. it shows aggregate shape, note-grounded observations, chat-grounded language patterns, and fixed-format custom views.",
+    points: [
+      "built-in dashboard views show totals, category distribution, rhythm, markers, effort, satisfaction, notes mirror, and chat mirror.",
+      "custom dashboard views start from a user prompt, then alibi drafts a constrained view from server-built dashboard data.",
+      "custom views can choose from a fixed renderer palette; model output cannot run arbitrary queries or introduce unsupported UI.",
+      "custom view results should use supplied evidence references, excerpts, and source-backed claims.",
+      "voice capture is available in custom-view prompt fields and inserts transcribed text instead of auto-submitting the form.",
+    ],
+  },
+  {
+    id: "calendar-voice",
+    icon: CalendarRange,
+    title: "calendar, sync, and voice",
+    intro:
+      "alibi now has account features beyond the tracker: a calendar workspace, optional Google Calendar sync, BYOK model settings, and Cartesia voice surfaces.",
+    points: [
+      "the calendar route pairs a compact month view with a selected-day timeline and inline block detail panel.",
+      "chat about this works from calendar-selected blocks and returns to the same block-specific companion thread.",
+      "Google sync creates a separate user-owned alibi calendar and writes completed blocks as events when connected.",
+      "save, edit, and delete operations attempt to sync or delete matching Google events; the calendar page includes manual retry controls.",
+      "Cartesia STT/TTS supports batch push-to-talk input and optional spoken companion replies. raw browser audio is sent for transcription and is not stored by default.",
+      "the demo previews the workspace locally, but full RAG indexing, retrieval logs, BYOK storage, and Google sync require an authenticated account.",
     ],
   },
   {
@@ -108,6 +156,7 @@ const SECTIONS: WikiSection[] = [
       "block-specific companion threads can explain feelings or missing details around a block.",
       "the notes mirror shows what happened inside saved blocks; the chat mirror shows patterns in how you describe the day.",
       "chat-derived insights can surface intention, avoidance, useful drift, mismatch, and feeling language without turning every message into a block.",
+      "retrieved chunks are supporting evidence, not a replacement for the original block, note, or message.",
       "good observations should point back to dates, blocks, excerpts, or messages.",
     ],
   },
@@ -138,6 +187,7 @@ const SECTIONS: WikiSection[] = [
       "non-visible work like chat-insight and note-insight extraction runs on the fast model so the bill stays small. custom dashboards use the companion model internally to analyze a server-built evidence packet.",
       "chat-insight and note-insight extraction run inline on the fast model so derived mirrors stay reliable after each saved message or note.",
       "the analyse path uses the fast model to gather evidence from the memory packet, then the companion model rewrites only that summary in the alibi voice. the long evidence packet never pays companion-tier price.",
+      "the vector RAG layer currently uses server-owned OpenAI embeddings for memory chunks; chat generation can still use hosted defaults or your selected BYOK provider.",
       "on direct anthropic profiles, the system prompt and voice guide are sent with ephemeral prompt caching, so repeat turns bill cached input at a fraction of the normal rate.",
       "settings ships presets for openrouter, openai, anthropic, deepseek, qwen (dashscope), zhipu glm, and moonshot kimi. any openai-compatible base url also works, including a local llama.cpp or vllm server.",
       "your provider key is encrypted at rest and is only used in the request that needs it. nothing about your messages is shared with alibi infrastructure beyond that request.",
@@ -167,6 +217,7 @@ const CHAT_PROMPTS = [
   "i've been doing email for 30 minutes.",
   "i did email for 30 minutes.",
   "what do my notes this week suggest about when admin turns into avoidance?",
+  "look across all saved memory: where does useful drift show up?",
   "i feel like i did nothing today. can you read back the evidence from my blocks?",
   "turn this messy description into a note, and keep the uncertainty in it.",
 ]

@@ -1095,7 +1095,7 @@ export default function DemoPage() {
           </h1>
           <p className="mt-3 text-[14px] leading-6 text-alibi-teal">
             This demo stores data in your browser only. Type a name, then use timer, manual blocks,
-            and chat like the authenticated app.
+            chat, dashboard, calendar, and voice controls like the authenticated app.
           </p>
           <form onSubmit={handleNameSubmit} className="mt-6 grid gap-3">
             <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
@@ -1166,7 +1166,14 @@ export default function DemoPage() {
           {usingCustomAiEndpoint
             ? "Companion AI is using your custom endpoint."
             : "Companion AI is using the hosted demo configuration."}{" "}
-          After sign-up, the real app can import completed demo blocks into your account.
+          After sign-up, the real app can import completed demo blocks, index account memory for
+          RAG, create custom dashboard views, and sync completed blocks to Google Calendar.
+        </section>
+
+        <section className="alibi-banner-info">
+          The demo previews local tracking, companion logging, block chats, dashboard mirrors, and
+          the calendar workspace. Full source-backed retrieval, retrieval logs, BYOK storage, and
+          Google sync run only after blocks live in an authenticated account.
         </section>
 
         {showAiPanel && (

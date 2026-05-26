@@ -51,17 +51,17 @@ const FEATURES: Feature[] = [
   {
     icon: BarChart3,
     title: "dashboard mirror",
-    body: "the dashboard summarizes categories, rhythm, markers, and note-derived observations without turning the day into a score.",
+    body: "the dashboard summarizes categories, rhythm, markers, note-derived observations, chat patterns, and custom evidence-backed views.",
   },
   {
     icon: SearchCheck,
-    title: "notes-first analysis",
-    body: "when you ask what happened, Alibi prioritizes your notes, then metadata, then linked chat, then broader chat context.",
+    title: "retrieved memory",
+    body: "when you ask what happened, Alibi combines date-scoped SQL context with vector retrieval over source-linked memory chunks.",
   },
   {
     icon: Network,
     title: "source-backed retrieval",
-    body: "the first RAG layer indexes blocks, note versions, insights, and chat turns so answers can stay tied to dated evidence.",
+    body: "the RAG layer indexes blocks, note versions, block insights, companion messages, and chat insights so answers stay tied to dated evidence.",
   },
   {
     icon: Lock,
@@ -107,7 +107,8 @@ export default function LandingPage() {
           </h1>
           <p className="mt-5 max-w-2xl text-pretty text-[16px] leading-relaxed text-alibi-teal">
             Alibi is a witness for messy lived time. It helps you track what happened, write the
-            nuance your memory loses, and later ask for patterns grounded in dated evidence.
+            nuance your memory loses, and later ask for patterns grounded in retrieved, dated
+            evidence.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -162,12 +163,12 @@ export default function LandingPage() {
             <PromiseRow
               icon={SearchCheck}
               title="reflect"
-              body="analysis reads notes first and keeps observations tied to the original evidence."
+              body="analysis reads notes first, then metadata, linked chat, and source-backed chunks."
             />
             <PromiseRow
               icon={Network}
               title="retrieve"
-              body="the first RAG layer searches source-backed chunks instead of leaning on vague summaries."
+              body="RAG searches source-backed chunks with date and source constraints before answering."
             />
           </div>
         </section>
@@ -182,7 +183,8 @@ export default function LandingPage() {
           <p className="mt-3 text-[14px] leading-6 text-alibi-teal">
             The current app supports timer tracking, manual blocks, editable notes, custom
             categories, semantic chat logging, dashboard summaries, note-derived insights, calendar
-            sync, BYOK settings, voice capture, and an initial source-backed retrieval layer.
+            sync, BYOK provider settings, push-to-talk voice, custom dashboard views, and a
+            source-backed RAG layer over saved memory chunks.
           </p>
         </header>
 
@@ -197,12 +199,12 @@ export default function LandingPage() {
         <div className="alibi-inset px-7 py-7 text-center">
           <BookOpen className="mx-auto h-5 w-5 text-alibi-pink" strokeWidth={2.3} />
           <h2 className="mt-3 text-2xl font-black tracking-tight text-alibi-blue">
-            built as a RAG experiment, but grounded in the product first
+            source-backed memory for real days
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-[14px] leading-7 text-alibi-ink">
-            RAG only becomes useful when the source material is clean. Alibi preserves dated notes,
-            chat context, and derived evidence first, then retrieves source-backed chunks to answer
-            questions like "when does admin become avoidance?" with pointers back to actual blocks.
+            Alibi preserves dated notes, note versions, chat context, and derived evidence first,
+            then retrieves source-backed chunks to answer questions like "what helped me recover focus after interruptions this week?"
+            with pointers back to actual blocks and messages.
           </p>
           <Link
             href="/demo"
