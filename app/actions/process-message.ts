@@ -487,6 +487,12 @@ function formatMessageForPrompt(message: CompanionMessage) {
   return `${message.role}: ${message.content}`;
 }
 
+function looksLikeTimerStartRequest(text: string) {
+  return /\b(?:start|begin|run|set|turn on)\s+(?:the\s+)?timer\b|\btimer\s+(?:for|on)\b|\bstart\s+(?:tracking|timing)\b/i.test(
+    text,
+  );
+}
+
 function looksLikeLogAttempt(
   text: string,
   routed: RouterOutput,
@@ -1144,6 +1150,10 @@ function applyRouterSafetyNet(
     routed.intent === "analyse_blocks"
   ) {
     return routed;
+  }
+
+  if (looksLikeTimerStartRequest(text)) {
+    return { ...routed, intent: "start_timer" };
   }
 
   const endsWithQuestion = /\?\s*$/.test(text);
@@ -1857,6 +1867,7 @@ export async function processCompanionMessage(
     pendingDraft !== null &&
     trimmed.length < 80 &&
     !trimmed.includes("?") &&
+    !looksLikeTimerStartRequest(trimmed) &&
     !/\b(how long|what did|pattern|why|feel|felt|tell me|show me|cancel|nevermind|never mind|stop|forget|start timer|stop timer)\b/i.test(
       trimmed,
     );

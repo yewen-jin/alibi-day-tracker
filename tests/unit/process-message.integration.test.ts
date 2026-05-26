@@ -469,4 +469,54 @@ describe("processCompanionMessage semantic duration flows", () => {
     expect(saveBlock).not.toHaveBeenCalled();
     expect(startTimer).not.toHaveBeenCalled();
   });
+
+  it("starts a timer request instead of continuing an incomplete pending draft", async () => {
+    const { processCompanionMessage, startTimer, saveBlock, memory } = await loadProcessMessage(
+      draft({
+        intent: "start_timer",
+        task_name: "giffgaff customer service",
+        category: "admin",
+      }),
+    );
+    const now = new Date().toISOString();
+    memory.state.companion_conversations.push({
+      id: "conversation-existing",
+      user_id: "user-1",
+      kind: "general",
+      title: "general",
+      related_time_block_id: null,
+      context_snapshot: { kind: "general" },
+      created_at: now,
+      updated_at: now,
+    });
+    memory.state.companion_drafts.push({
+      id: "draft-existing",
+      user_id: "user-1",
+      conversation_id: "conversation-existing",
+      status: "pending",
+      draft: draft({
+        task_name: "old incomplete block",
+        category: "admin",
+        started_at: "2026-05-24T10:00:00.000Z",
+      }),
+      expires_at: null,
+      created_at: now,
+      updated_at: now,
+    });
+
+    const result = await processCompanionMessage({
+      text: "start the timer on giffgaff customer service",
+      conversationId: "conversation-existing",
+      timezone: "Europe/London",
+    });
+
+    expect(result.type).toBe("timer_started");
+    expect(saveBlock).not.toHaveBeenCalled();
+    expect(startTimer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task_name: "giffgaff customer service",
+        category: "admin",
+      }),
+    );
+  });
 });
