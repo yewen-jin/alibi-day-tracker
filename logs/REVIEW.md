@@ -1,7 +1,7 @@
 # Review
 
 Date: 2026-05-05  
-Updated: 2026-05-24
+Updated: 2026-05-29
 
 This review tracks architecture decisions, database schema, project efficiency, bugs, software design, and the `coach` to `companion` naming transition. Product intent is grounded in [SPECS.md](../specs/SPECS.md), [PROJECT.md](../specs/PROJECT.md), [STYLES.md](../specs/STYLES.md), and [README.md](../README.md).
 
@@ -147,19 +147,21 @@ Remaining work:
 - Route these paths through `resolveAiModelsForUser`, or explicitly document them as server-owned hosted processing until migrated.
 - If `generate-insight.ts` is legacy-only, mark it clearly and avoid invoking it from new flows.
 
-### 10. Medium: embeddings require server-owned OpenAI credentials but setup docs do not clearly say so
+### 10. Medium: embeddings require server-owned OpenAI credentials and health visibility
 
-Status: open.
+Status: documentation addressed 2026-05-29; health/admin visibility still open.
 
 RAG embeddings currently require `OPENAI_API_KEY`, independent of BYOK provider settings.
 
 References:
 - [lib/rag/embedding.ts](../lib/rag/embedding.ts) — only `openai` is supported and `OPENAI_API_KEY` is required.
-- [README.md](../README.md) — BYOK/model settings are documented, but server-owned embedding credentials are not called out clearly enough.
+- [README.md](../README.md) — setup now calls out `OPENAI_API_KEY`, `ALIBI_EMBEDDING_PROVIDER`, `ALIBI_EMBEDDING_MODEL`, `ALIBI_EMBEDDING_DIMENSIONS`, and `ALIBI_EMBEDDING_BATCH_SIZE` as server-owned RAG infrastructure separate from user BYOK provider settings.
+- [specs/SPECS.md](../specs/SPECS.md) — data contract now states that embeddings are server-owned infrastructure today, not user BYOK provider calls.
+- [specs/PROJECT.md](../specs/PROJECT.md) — project tracker now records the same RAG embedding setup boundary and keeps the remaining operational risk visible.
 
 Remaining work:
-- Document `OPENAI_API_KEY`, `ALIBI_EMBEDDING_MODEL`, `ALIBI_EMBEDDING_DIMENSIONS`, and `ALIBI_EMBEDDING_BATCH_SIZE`.
-- Separate server-owned embeddings from user BYOK in setup docs and privacy/configuration language.
+- Surface embedding/indexing health in admin/debug tooling.
+- Revisit embedding provider policy if user BYOK, regional hosting, or privacy requirements change.
 
 ### 11. Low: static verification is still weaker than it looks
 

@@ -1,5 +1,9 @@
 # The theoretical backbones
 
+Related docs: [README](../README.md), [product spec](./SPECS.md), [project tracker](./PROJECT.md), [design system](./STYLES.md).
+
+This is research and product-theory background, not the current implementation contract. Use [SPECS.md](./SPECS.md) for product requirements and [PROJECT.md](./PROJECT.md) for current status.
+
 Five frameworks that should anchor the design. I'm picking these because (a) they're empirically supported and (b) they map directly to product features, not just vibes.
 
 ### 1. Externalising executive function (Russell Barkley)

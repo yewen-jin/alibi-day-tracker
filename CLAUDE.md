@@ -9,13 +9,15 @@ Alibi is a notes-first time-block tracker for ADHD brains. Users log what they a
 ## Commands
 
 ```bash
-npm run dev       # Start Next.js dev server (localhost:3000)
-npm run build     # Production build (also serves as type-check)
-npm run lint      # ESLint via Next.js config
-npm run start     # Serve production build
+pnpm dev          # Start Next.js dev server (localhost:3000)
+pnpm build        # Production build (also serves as type-check)
+pnpm test:unit    # Unit tests (Vitest)
+pnpm test:e2e     # Playwright E2E against a running dev server
+pnpm lint         # Currently broken: next lint is incompatible with Next 16
+pnpm start        # Serve production build
 ```
 
-No test runner is configured. `npm run build` is the primary verification step.
+`pnpm build` is the primary verification step. Unit tests and the demo E2E smoke path exist; `pnpm lint` should not be treated as a passing gate until the Next 16 lint script is replaced.
 
 ## Tech Stack
 
@@ -33,9 +35,12 @@ No test runner is configured. `npm run build` is the primary verification step.
 
 - `app/page.tsx` — Landing page (public)
 - `app/app/page.tsx` — Authenticated timer + block editor + companion chat
+- `app/app/calendar/page.tsx` — Month calendar, selected-day timeline, inline block detail, calendar sync controls
 - `app/app/dashboard/page.tsx` — Charts, ADHD markers, insights
+- `app/app/settings/page.tsx` — Hosted/default AI mode, BYOK provider keys, model settings, Google/voice-related status
 - `app/app/docs/page.tsx` — Feature guide
 - `app/demo/page.tsx` — Public demo backed by localStorage
+- `app/privacy/page.tsx` and `app/terms/page.tsx` — Public legal/privacy copy
 - `app/auth/` — Login, sign-up, callback routes
 
 ### Server Actions (`app/actions/`)
@@ -47,9 +52,10 @@ All database operations go through server actions (`"use server"`). Two key file
 
 ### AI Integration
 
-- **`lib/ai.ts`** — OpenRouter provider setup, model exports, JSON extraction helper
+- **`lib/ai.ts`** — hosted OpenRouter defaults, model exports, Anthropic cache options, JSON extraction helper
 - **`lib/companion-voice.ts`** — Central prompt guide for all AI outputs. The companion voice is evidence-led, specific, quiet, and nonjudgmental. It cites what the user's records say, never invents work or offers generic praise.
-- **`lib/note-insights.ts`** — Heuristic pattern extraction from notes (friction, avoidance, hyperfocus, satisfaction signals). Not RAG — no embeddings or vector search.
+- **`lib/rag/`** — Initial source-backed memory chunking, OpenAI embedding, indexing, retrieval, and retrieval logs. This is server-owned infrastructure, separate from user BYOK chat providers.
+- **`lib/note-insights.ts`** — Note insight extraction with heuristic fallback for friction, avoidance, hyperfocus, satisfaction, people, projects, and themes.
 
 ### Core Data Model (`lib/types.ts`)
 
@@ -62,14 +68,14 @@ All database operations go through server actions (`"use server"`). Two key file
 
 ### Database
 
-Schema lives in `db/supabase-v2.sql` (primary) and `db/supabase-chat-history.sql` (companion tables migration). Row-level security enforces user data isolation on all tables.
+Legacy Supabase schema files live in `db/supabase-v2.sql` and `db/supabase-chat-history.sql`. Portable Postgres migrations live in `db/migrations/`; the app is mid-cutover to Kysely repositories through `DATABASE_URL`, while Supabase Auth remains the identity provider. Current RAG tables are `memory_chunks` and `rag_retrieval_logs`.
 
 ## Styling
 
-Single source of truth: **`app/globals.css`** + Tailwind v4 theme. See **`STYLES.md`** for the full design system reference.
+Single source of truth: **`app/globals.css`** + Tailwind v4 theme. See **`specs/STYLES.md`** for the full design system reference.
 
 - Do not use inline `style={{}}` for colors, surfaces, shadows, or borders
-- Use alibi component classes: `.alibi-card`, `.alibi-card-pop`, `.alibi-pill`, `.alibi-inset`, `.alibi-input`, `.alibi-button-primary`, `.alibi-button-secondary`, `.alibi-chip`, `.alibi-label`
+- Use alibi component classes: `.alibi-card`, `.alibi-card-pop`, `.alibi-pill`, `.alibi-inset`, `.alibi-input`, `.alibi-button-primary`, `.alibi-button-teal`, `.alibi-button-stop`, `.alibi-button-secondary`, `.alibi-block-item`, `.alibi-doc-card`
 - Color tokens: `alibi-ink`, `alibi-blue`, `alibi-pink`, `alibi-teal`, `alibi-lavender`
 - Fonts: Figtree (sans), JetBrains Mono (mono)
 
@@ -81,16 +87,23 @@ Copy `.env.example` and fill in:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 OPENROUTER_API_KEY=
+DATABASE_URL=
+ALIBI_SECRET_ENCRYPTION_KEY=
+OPENAI_API_KEY=                    # server-owned RAG embeddings, separate from BYOK
 NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=   # optional, for auth redirects in dev
 ```
 
 ## Key Docs
 
-- `SPECS.md` — Product spec and data principles
-- `PROJECT.md` — Implementation history and current status
-- `V3-PLAN.md` — V3 roadmap
-- `STYLES.md` — Design system reference
-- `CHAT.md` — Chat/LLM guidelines
+- `README.md` — Setup, architecture overview, routes, schema summary, and status
+- `specs/SPECS.md` — Product spec and data principles
+- `specs/PROJECT.md` — Implementation history and current status
+- `specs/STYLES.md` — Design system reference
+- `specs/RESEARCH.md` — Research/theory background
+- `plans/V3-PLAN.md` — V3 roadmap
+- `plans/CHAT.md` — Chat/LLM guidelines
+- `plans/FUTURE-ROADMAP-projects-breaks.md` — Project and break tracking plan
+- `logs/REVIEW.md` — Current review findings
 - `lib/companion-voice.ts` — Read this before changing any AI prompts
 
 # Repository Guidelines
@@ -103,9 +116,11 @@ When changing product terminology, prefer `companion` for current app/runtime na
 
 ## Testing Guidelines
 
-There is no established automated test suite yet. For now, verify changes with:
-- `npm run build`
-- targeted manual checks in `/app`, `/app/dashboard`, and `/demo`
+Verify changes with:
+- `pnpm build`
+- `pnpm test:unit` for logic changes
+- `pnpm test:e2e` for demo/browser workflow changes when a dev server is running
+- targeted manual checks in `/app`, `/app/dashboard`, `/app/calendar`, `/app/settings`, and `/demo`
 
 If you add tests later, place them near the feature or in a dedicated test folder and use clear names like `timer.spec.ts` or `process-message.test.ts`.
 

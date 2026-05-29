@@ -2,6 +2,8 @@
 
 Single source of truth: `app/globals.css` + Tailwind v4 theme. Do not introduce inline `style={}` objects for colors, surfaces, or shadows — always use the named classes below.
 
+Related docs: [README](../README.md), [product spec](./SPECS.md), [project tracker](./PROJECT.md).
+
 ---
 
 ## design rules
@@ -277,4 +279,3 @@ font-mono text-xs font-black uppercase tracking-[0.12em] text-alibi-teal
 | `.alibi-fade-in` | Transient confirmations fade in (240ms ease-out) |
 | `.alibi-record-pulse` | Voice button scale 1→1.05 while recording (2s loop) |
 | `.alibi-listen-dot` | Listening indicator ring breath (2.4s loop) |
-

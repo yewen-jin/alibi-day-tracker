@@ -12,6 +12,22 @@ The current product is timer-first and notes-first:
 
 ---
 
+## Documentation Map
+
+| Document | Purpose |
+|---|---|
+| [README.md](./README.md) | Setup, architecture overview, routes, schema summary, and current status |
+| [specs/SPECS.md](./specs/SPECS.md) | Product and system contract |
+| [specs/PROJECT.md](./specs/PROJECT.md) | Implementation history, status, gaps, verification, and roadmap |
+| [specs/STYLES.md](./specs/STYLES.md) | Alibi design system and component class rules |
+| [specs/RESEARCH.md](./specs/RESEARCH.md) | Research and theory background |
+| [plans/V3-PLAN.md](./plans/V3-PLAN.md) | Notes-first pattern-engine roadmap reference |
+| [plans/CHAT.md](./plans/CHAT.md) | Chat and LLM behavior notes |
+| [plans/FUTURE-ROADMAP-projects-breaks.md](./plans/FUTURE-ROADMAP-projects-breaks.md) | Project and break tracking plan |
+| [logs/REVIEW.md](./logs/REVIEW.md) | Current review findings and risks |
+
+---
+
 ## The Problem It Solves
 
 Most time trackers flatten the day into labels and durations. Alibi keeps the timestamped texture around the work: interruptions, drift, momentum, resistance, mood, satisfaction, and later reinterpretation. Over time, those records become a mirror for understanding how your productivity actually behaves.
@@ -131,6 +147,8 @@ Custom dashboard views fetch data on the server, build a bounded evidence packet
 Per-user BYOK resolution lives in [`lib/ai-settings.ts`](./lib/ai-settings.ts). Supported providers are OpenRouter, OpenAI, OpenAI-compatible HTTPS endpoints, and Anthropic. Custom API keys are encrypted with `ALIBI_SECRET_ENCRYPTION_KEY` and stored in `user_secret_keys`.
 
 Alibi's reusable companion voice prompt lives in [`lib/companion-voice.ts`](./lib/companion-voice.ts). Change `alibiCompanionGuide` there to tune how the companion sounds. It is used by companion chat, saved-block analysis, and proactive insight generation.
+
+The initial vector retrieval layer lives in [`lib/rag`](./lib/rag). It indexes source-backed memory chunks from blocks, note versions, insights, and companion messages. Embeddings are server-owned OpenAI infrastructure configured with `OPENAI_API_KEY`; they are separate from user BYOK chat/provider settings.
 
 Cartesia routes live under `/api/cartesia/*`:
 
@@ -368,10 +386,20 @@ alibi-day-tracker/
 │       └── demo.test.ts
 ├── vitest.config.ts
 ├── playwright.config.ts
-├── db/supabase-v2.sql
-├── SPECS.md
-├── PROJECT.md
-└── RESEARCH.md
+├── db/
+│   ├── migrations/
+│   └── supabase-v2.sql
+├── specs/
+│   ├── SPECS.md
+│   ├── PROJECT.md
+│   ├── STYLES.md
+│   └── RESEARCH.md
+├── plans/
+│   ├── V3-PLAN.md
+│   ├── CHAT.md
+│   └── FUTURE-ROADMAP-projects-breaks.md
+└── logs/
+    └── REVIEW.md
 ```
 
 ---
@@ -387,6 +415,7 @@ alibi-day-tracker/
 - OpenRouter API key
 - `DATABASE_URL` for the app-data Kysely repository path
 - `ALIBI_SECRET_ENCRYPTION_KEY` for BYOK and Google refresh-token encryption
+- `OPENAI_API_KEY` for server-owned RAG embeddings if memory chunk indexing/retrieval is enabled
 
 ### Environment Variables
 
@@ -398,6 +427,13 @@ SUPABASE_JWT_SECRET=
 OPENROUTER_API_KEY=
 DATABASE_URL=
 ALIBI_SECRET_ENCRYPTION_KEY=
+
+# server-owned RAG embeddings, separate from user BYOK settings
+OPENAI_API_KEY=
+ALIBI_EMBEDDING_PROVIDER=openai
+ALIBI_EMBEDDING_MODEL=text-embedding-3-small
+ALIBI_EMBEDDING_DIMENSIONS=1536
+ALIBI_EMBEDDING_BATCH_SIZE=32
 
 # optional Google Calendar sync
 GOOGLE_CLIENT_ID=
@@ -441,11 +477,16 @@ Apply [supabase-v2.sql](./db/supabase-v2.sql) in the Supabase SQL editor for the
 - `user_ai_provider_settings`
 - `google_calendar_connections`
 - `google_calendar_event_syncs`
+- `memory_chunks`
+- `rag_retrieval_logs`
+
+If you enable the RAG migration, run `pnpm backfill:rag` with `OPENAI_API_KEY` configured. User BYOK provider keys are not used for embeddings today.
 
 ### Verification
 
 ```bash
 pnpm build      # type-check + static build
+pnpm test:unit  # unit tests (Vitest)
 pnpm test       # unit tests (Vitest)
 pnpm test:e2e   # Playwright E2E against localhost:3000 (requires dev server)
 ```

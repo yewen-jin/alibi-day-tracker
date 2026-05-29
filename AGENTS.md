@@ -2,14 +2,16 @@
 
 ## Project Structure & Module Organization
 
-This is a Next.js App Router project for Alibi. Main application routes live in `app/`, including server actions in `app/actions/`. Shared UI components live in `components/`, with dashboard-specific views under `components/dashboard/`. Shared logic, Supabase clients, prompt text, and derived-data helpers live in `lib/`. Database schema and migration SQL live in `db/`. Product and implementation docs are in `README.md`, `SPECS.md`, `PROJECT.md`, and `REVIEW.md`.
+This is a Next.js App Router project for Alibi. Main application routes live in `app/`, including server actions in `app/actions/`. Shared UI components live in `components/`, with dashboard-specific views under `components/dashboard/`. Shared logic, Supabase clients, prompt text, and derived-data helpers live in `lib/`. Database schema and migration SQL live in `db/`. Product and implementation docs are in `README.md`, `specs/SPECS.md`, `specs/PROJECT.md`, `specs/STYLES.md`, `specs/RESEARCH.md`, and `logs/REVIEW.md`.
 
 ## Build, Test, and Development Commands
 
-- `npm run dev` — start the local Next.js dev server.
-- `npm run build` — create a production build; use this as the main verification step.
-- `npm run start` — run the production build locally.
-- `npm run lint` — intended lint command, but it is currently broken with the installed Next.js version and should not be treated as a passing gate until fixed.
+- `pnpm dev` — start the local Next.js dev server.
+- `pnpm build` — create a production build; use this as the main verification step.
+- `pnpm start` — run the production build locally.
+- `pnpm test:unit` — run the Vitest unit suite.
+- `pnpm test:e2e` — run Playwright E2E tests against a running dev server.
+- `pnpm lint` — intended lint command, but it is currently broken with the installed Next.js version and should not be treated as a passing gate until fixed.
 
 ## Coding Style & Naming Conventions
 
@@ -19,9 +21,11 @@ When changing product terminology, prefer `companion` for current app/runtime na
 
 ## Testing Guidelines
 
-There is no established automated test suite yet. For now, verify changes with:
-- `npm run build`
-- targeted manual checks in `/app`, `/app/dashboard`, and `/demo`
+Verify changes with:
+- `pnpm build`
+- `pnpm test:unit` for logic changes
+- `pnpm test:e2e` for demo/browser workflow changes when a dev server is running
+- targeted manual checks in `/app`, `/app/dashboard`, `/app/calendar`, `/app/settings`, and `/demo`
 
 If you add tests later, place them near the feature or in a dedicated test folder and use clear names like `timer.spec.ts` or `process-message.test.ts`.
 
@@ -39,4 +43,4 @@ Supabase and OpenRouter keys live in `.env`. Do not commit secrets. Treat `db/*.
 
 ## Styles:
 
-Always follow the design system forcomponent and class rules, refer to STYLES.md
+Always follow the design system for component and class rules; refer to `specs/STYLES.md`.

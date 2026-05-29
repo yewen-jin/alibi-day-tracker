@@ -13,8 +13,12 @@ The product is evolving from a timer-first tracker into a qualitative productivi
 
 - **[SPECS.md](./SPECS.md):** product/system contract, data principles, interface behavior, AI behavior, guardrails, and qualitative pattern direction.
 - **PROJECT.md:** implementation history, current status, known gaps, verification, and future roadmap.
-- **[V3-PLAN.md](./V3-PLAN.md):** detailed roadmap reference for the notes-first insight engine.
+- **[STYLES.md](./STYLES.md):** design-system and component class rules.
 - **[RESEARCH.md](./RESEARCH.md):** introspection, self-monitoring, CBT-style reflection, and attention/productivity pattern research.
+- **[V3-PLAN.md](../plans/V3-PLAN.md):** detailed roadmap reference for the notes-first insight engine.
+- **[CHAT.md](../plans/CHAT.md):** chat and LLM behavior notes.
+- **[FUTURE-ROADMAP-projects-breaks.md](../plans/FUTURE-ROADMAP-projects-breaks.md):** project and break tracking plan.
+- **[REVIEW.md](../logs/REVIEW.md):** current review findings and risks.
 
 ## Evolution History
 
@@ -62,7 +66,7 @@ Implemented V3 foundation:
 - block-specific companion threads use the selected block, including its note, as fixed context and do not mutate blocks in v1;
 - dashboard notes mirror surfaces note-grounded observations, and chat mirror surfaces message-grounded narrative patterns separately;
 - `/app/calendar` now pairs a compact month view with a selected-day 24-hour timeline, including category-colored blocks and reusable block chat/edit/delete actions;
-- hosted Supabase V3 schema has been applied and REST-verified;
+- hosted Supabase V3 schema has been applied and REST-verified, with newer integration/RAG migrations still requiring environment-specific verification;
 - database portability phase 1 is started: Kysely + `pg` are installed, `DATABASE_URL` / optional `DATABASE_SSL=true` are the new app-data connection path, and `lib/db/client.ts` defines a server-only typed Postgres client;
 - `lib/auth/session.ts` is the app-owned auth boundary. Supabase Auth still provides login/session, but server routes can now call `getCurrentUser()`, `requireUser()`, or `requireSyncedUser()` instead of directly calling `supabase.auth.getUser()`;
 - `db/migrations/001_initial_app_schema.sql` is the first portable Postgres migration. It introduces `app_users`, replaces app-data foreign keys to `auth.users` with `app_users(id)`, and omits Supabase RLS policies so ownership is enforced in repository queries;
@@ -98,7 +102,7 @@ V4 update — agent layer refresh (2026-05):
 - `analyseBlocks` is split into a fast-tier evidence synthesis step and a companion-tier voice rewrite step, so the large memory packet never pays companion-tier price;
 - the router prompt now performs draft-completion inline when a `Prior draft` is provided, and a skip-router heuristic bypasses the router entirely on short clarification answers — replacing the previous sequential router + clarifier call pair;
 - `lib/memory-context.ts` now holds a 5-minute in-process cache keyed by user + range label + limits; cache is skipped for the `today` scope and is invalidated from `app/actions/timer.ts` on every block write or delete via `invalidateMemoryContextForUser`;
-- `db/migrations/012_memory_chunks_rag.sql` plus `lib/rag/*` add the first vector RAG slice: chunking for time blocks, note versions, insights, and companion messages; OpenAI embeddings; Kysely-backed indexing/retrieval; and retrieval logs. Current review findings track portability and fallback-scope risks in this layer;
+- `db/migrations/012_memory_chunks_rag.sql` plus `lib/rag/*` add the first vector RAG slice: chunking for time blocks, note versions, insights, and companion messages; server-owned OpenAI embeddings configured by `OPENAI_API_KEY` / `ALIBI_EMBEDDING_*`; Kysely-backed indexing/retrieval; and retrieval logs. Current review findings track portability, fallback-scope, and embedding-configuration risks in this layer;
 - `anthropicCacheOptions` in `lib/ai.ts` wires Anthropic ephemeral prompt caching into the four companion call sites; only direct Anthropic profiles use it, since OpenRouter pass-through caching is inconsistent;
 - BYOK provider presets land at `lib/ai-provider-presets.ts` (DeepSeek, Qwen via DashScope, Zhipu GLM, Moonshot Kimi, plus OpenRouter Anthropic and DeepSeek convenience presets), surfaced as a quick-start picker in `components/ai-settings-form.tsx` that prefills the existing custom-key form;
 - `/app/docs` gains an "ai models, providers, and cost" section that documents the agent topology, defaults, deferred-insight behavior, two-tier analysis, prompt caching, and BYOK presets.
@@ -170,7 +174,7 @@ AI model routing:
 - Per-user model resolution lives in `lib/ai-settings.ts` and currently supports hosted mode, OpenRouter, OpenAI, OpenAI-compatible HTTPS endpoints, and Anthropic.
 - New `companion_messages` rows record the actual selected companion model in `model`; the Supabase backfill script preserves legacy rows as `openai/gpt-4o-mini`.
 - Companion-facing prompts share the reusable `alibiCompanionGuide` in `lib/companion-voice.ts`.
-- Note insight generation, chat insight extraction, and proactive insight generation still use the hosted shared models directly and have not yet been fully switched to per-user BYOK resolution.
+- Note insight generation, chat insight extraction, and proactive insight generation still use the hosted shared models directly and have not yet been fully switched to per-user BYOK resolution. RAG embeddings are also server-owned OpenAI calls today and are separate from user BYOK provider settings.
 - Custom dashboard views use an internal `dashboardModel` role that aliases the resolved companion model. The server builds the evidence packet, the model returns a validated spec and result snapshot, refreshes reuse the saved spec, and the fixed renderer palette displays only validated section data and copied evidence references.
 
 UI status:
@@ -197,8 +201,8 @@ UI status:
 
 Verification:
 
-- `npm run build` passes after the integrations slice. Next.js still warns about multiple lockfiles and inferred workspace root.
-- `npm run test:unit` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, block draft utilities, process-message semantic duration integration, secret encryption, and AI provider validation (Vitest).
+- `pnpm build` passes after the integrations slice. Next.js still warns about multiple lockfiles and inferred workspace root.
+- `pnpm test:unit` passes — unit tests cover note insights, chat insights, memory-context range/formatting, dashboard data including daily timeline placement helpers, block draft utilities, process-message semantic duration integration, secret encryption, and AI provider validation (Vitest).
 - Playwright E2E covers the public demo tracker/dashboard/calendar local persistence path in `tests/e2e/demo.test.ts`; broader server-action integration tests are not yet implemented.
 - Hosted schema was checked through Supabase REST table/column probes.
 - Authenticated browser QA is still needed for note-save, note-edit insight regeneration, custom category creation, chat logging, chat analysis, dashboard display, Google OAuth, calendar event sync, BYOK key testing, and Cartesia voice behavior.
@@ -235,8 +239,8 @@ Known working principle:
 - Notes mirror and chat mirror are initial vertical slices, not a full longitudinal productivity pattern engine.
 - Chat can analyze saved data, but its elicitation style should become more deliberate: it should ask better questions about feelings, drift, mixed outcomes, and context.
 - Category inference is allowed and desirable for low-friction logging. The remaining requirement is avoiding misleading structure when category evidence is absent or ambiguous, and keeping inferred categories user-editable after save.
-- `getDayRange` is not timezone-safe: server-side "today" uses server local time instead of the user's IANA timezone (see REVIEW.md Finding 2).
-- Project-level tracking and break overlays are still roadmap-only. The current plan is documented in [FUTURE-ROADMAP-projects-breaks.md](./FUTURE-ROADMAP-projects-breaks.md).
+- `getDayRange` is not timezone-safe: server-side "today" uses server local time instead of the user's IANA timezone (see [REVIEW.md](../logs/REVIEW.md)).
+- Project-level tracking and break overlays are still roadmap-only. The current plan is documented in [FUTURE-ROADMAP-projects-breaks.md](../plans/FUTURE-ROADMAP-projects-breaks.md).
 - `processCompanionMessage` now has focused server-action integration coverage for semantic duration routing. Broader server-action integration tests for `app/actions/timer.ts` and non-duration companion flows are not yet written.
 - Playwright E2E still needs more coverage beyond the demo tracker/dashboard/calendar smoke path, especially authenticated timer flows, import-after-signup, and companion-created block operations.
 - Long notes in block-specific companion context need a cached summary/excerpt strategy before notes become large enough to create token pressure.
@@ -271,6 +275,7 @@ Known working principle:
 - Apply `db/migrations/004_integrations_ai_calendar_voice.sql` to staging and verify all new tables.
 - Smoke test `/app/settings`: save multiple provider keys, switch between saved providers, confirm each provider restores its own model IDs, change model IDs without re-entering the key, reset model IDs to defaults, test provider/model combination, confirm active status display, confirm hosted fallback, disable, delete, and verify no key is exposed in UI/logs.
 - Finish BYOK resolver coverage for note insights, chat insights, and proactive messages so all user-context model calls respect custom provider mode.
+- Keep RAG embedding docs explicit: `OPENAI_API_KEY` and `ALIBI_EMBEDDING_*` are server-owned retrieval infrastructure, not user BYOK model settings.
 - Smoke test Google OAuth with `calendar.app.created`, secondary `alibi` calendar creation, save/edit/delete block sync, duplicate prevention via content hash, and manual retry behavior.
 - Add Google disconnect/revoke behavior and token deletion.
 - Smoke test Cartesia microphone capture, STT transcript submission into `processCompanionMessage`, TTS playback, mute/stop states, and error banners.

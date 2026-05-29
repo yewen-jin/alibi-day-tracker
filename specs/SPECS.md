@@ -1,6 +1,7 @@
 # Alibi - Product Spec
 
 > Product and system contract. For implementation history, current status, and roadmap tracking, see [PROJECT.md](./PROJECT.md).
+> For design-system rules see [STYLES.md](./STYLES.md), research background see [RESEARCH.md](./RESEARCH.md), and implementation review findings see [REVIEW.md](../logs/REVIEW.md).
 
 ## Core Promise
 
@@ -20,7 +21,7 @@ Alibi is moving from a simple timer tracker toward a qualitative productivity pa
 - **Derived insights are replaceable interpretations.** AI output can summarize and structure, but raw notes and chat remain the truth.
 - **Context belongs to Alibi, not the model vendor.** The app should retrieve and format its own evidence from the database so the companion model can be replaced without losing memory.
 - **Integrations must be explicit and reversible.** Calendar, model-provider, and voice features require clear consent, narrow scopes, secret handling, and visible status/error states.
-- **Future RAG should retrieve evidence, not vibes.** Any retrieval workflow should cite the original time block, note, chat turn, or derived observation it used.
+- **Retrieval should return evidence, not vibes.** SQL memory context and vector RAG should cite the original time block, note, chat turn, chunk, or derived observation they used.
 
 ## User Model
 
@@ -235,7 +236,7 @@ Default scope is today. User language can expand context to yesterday, the last 
 
 `companion_drafts` stores temporary clarification state for the general companion thread when the agent needs more information before writing a valid time block.
 
-`memory_chunks` and `rag_retrieval_logs` support the initial vector retrieval layer. They store source-linked chunks, embedding status/errors, chunk metadata, and retrieval diagnostics. The portable database path should keep these tables aligned with `app_users` ownership instead of introducing a separate identity model.
+`memory_chunks` and `rag_retrieval_logs` support the initial vector retrieval layer. They store source-linked chunks, embedding status/errors, chunk metadata, and retrieval diagnostics. Embeddings are server-owned infrastructure today (`OPENAI_API_KEY` plus `ALIBI_EMBEDDING_*` configuration), not user BYOK provider calls. The portable database path should keep these tables aligned with `app_users` ownership instead of introducing a separate identity model.
 
 `user_secret_keys` stores encrypted secrets such as user AI provider keys and Google refresh tokens. The client must only receive masked previews.
 
@@ -259,8 +260,8 @@ The data model should evolve toward timeline-linked evidence, not a single flatt
 - `projects` and child project-segment tables for grouping time blocks by concrete work stream, plus focused/non-focused allocations inside a block;
 - break/event tables linked to the active timer or time block so breaks can be tracked without interrupting the underlying block;
 - `pattern_observations` for longitudinal observations across many blocks;
-- `rag_documents` or `rag_chunks` for retrievable note/chat/insight snippets with source pointers;
-- embedding storage for retrieval once there is enough real user data to justify RAG;
+- richer retrieval/evidence tables beyond the current `memory_chunks` slice, if real usage proves the current chunk shape is too coarse;
+- additional embedding providers or per-tenant embedding policy once privacy, cost, and portability requirements are clearer;
 - relationship fields for multi-activity or "attention shifted from A to B" blocks.
 
 Agentic schema evolution must be migration-reviewed. The agent may propose database changes or draft migration SQL, but production schema changes should remain explicit human-applied migrations.
