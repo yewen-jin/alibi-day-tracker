@@ -30,10 +30,13 @@ import {
   type DemoStoredMessage,
   type DemoStoredSession,
   type DemoAiSettings,
+  type DemoStoredCustomDashboard,
 } from "@/lib/demo-storage"
+import { createSeededDemoSession, userAuthoredDemoMetadata } from "@/lib/demo-seed-data"
 import { generateDemoBlockInsight, processDemoCompanionMessage } from "@/app/actions/demo"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import { CalendarView } from "@/components/dashboard/calendar-view"
+import { DemoCustomDashboard } from "@/components/dashboard/demo-custom-dashboard"
 import { AlibiWorkspace } from "@/components/alibi-workspace"
 import { Dropdown } from "@/components/dropdown"
 import {
@@ -70,9 +73,11 @@ import {
 import type { ActiveTimer, CompanionMessage, CompanionMessageInsight, TimeBlock, TimeBlockCategoryRecord, TimeBlockInsight } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { defaultCategoryColor } from "@/lib/time-block-display"
+import type { DashboardSkillInput } from "@/lib/skills/types"
 
 type DemoActiveTimer = NonNullable<DemoStoredSession["active_timer"]>
 type DemoView = "tracker" | "dashboard" | "calendar"
+type DemoDashboardView = "overview" | "custom"
 type DemoCalendarPanel = "edit" | "chat" | null
 
 type DemoActiveThread =
@@ -326,7 +331,7 @@ function createBlockFromOperation({
     hyperfocus_marker: base?.hyperfocus_marker ?? false,
     guilt_marker: base?.guilt_marker ?? false,
     novelty_marker: base?.novelty_marker ?? false,
-    agent_metadata: base?.agent_metadata ?? { source: "demo_companion" },
+    agent_metadata: base ? userAuthoredDemoMetadata(base.agent_metadata) : { source: "demo_companion" },
     created_at: base?.created_at ?? now,
     updated_at: now,
   }
@@ -344,10 +349,12 @@ export default function DemoPage() {
   const [pendingDraft, setPendingDraft] = useState<CompanionDraft | null>(null)
   const [insights, setInsights] = useState<TimeBlockInsight[]>([])
   const [chatInsights, setChatInsights] = useState<CompanionMessageInsight[]>([])
+  const [customDashboard, setCustomDashboard] = useState<DemoStoredCustomDashboard | null>(null)
   const [aiUsage, setAiUsage] = useState<DemoAiUsage>(() => createDemoAiUsage())
   const [aiSettings, setAiSettings] = useState<DemoAiSettings>(() => createDemoAiSettings())
   const [activeThread, setActiveThread] = useState<DemoActiveThread>({ kind: "general" })
   const [view, setView] = useState<DemoView>("tracker")
+  const [dashboardView, setDashboardView] = useState<DemoDashboardView>("overview")
   const [calendarPanel, setCalendarPanel] = useState<DemoCalendarPanel>(null)
   const [calendarSelectedBlock, setCalendarSelectedBlock] = useState<TimeBlock | null>(null)
   const [showAiPanel, setShowAiPanel] = useState(false)
@@ -376,6 +383,7 @@ export default function DemoPage() {
       setPendingDraft(existing.pending_draft as CompanionDraft | null)
       setInsights(existing.insights)
       setChatInsights(existing.chat_insights)
+      setCustomDashboard(existing.custom_dashboard ?? null)
       setAiUsage(existing.ai_usage)
       setAiSettings(existing.ai_settings)
     }
@@ -396,11 +404,12 @@ export default function DemoPage() {
       pending_draft: pendingDraft,
       insights,
       chat_insights: chatInsights,
+      custom_dashboard: customDashboard,
       ai_usage: aiUsage,
       ai_settings: aiSettings,
       updated_at: new Date().toISOString(),
     })
-  }, [activeTimer, aiSettings, aiUsage, blockThreads, blocks, categories, chatInsights, insights, loaded, messages, name, pendingDraft])
+  }, [activeTimer, aiSettings, aiUsage, blockThreads, blocks, categories, chatInsights, customDashboard, insights, loaded, messages, name, pendingDraft])
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000)
@@ -451,11 +460,12 @@ export default function DemoPage() {
       pending_draft: pendingDraft,
       insights,
       chat_insights: chatInsights,
+      custom_dashboard: customDashboard,
       ai_usage: aiUsage,
       ai_settings: aiSettings,
       updated_at: new Date().toISOString(),
     }
-  }, [activeTimer, aiSettings, aiUsage, blockThreads, blocks, categories, chatInsights, insights, messages, name, pendingDraft])
+  }, [activeTimer, aiSettings, aiUsage, blockThreads, blocks, categories, chatInsights, customDashboard, insights, messages, name, pendingDraft])
 
   sessionRef.current = currentSession
 
@@ -470,6 +480,7 @@ export default function DemoPage() {
     setPendingDraft(session.pending_draft)
     setInsights(session.insights)
     setChatInsights(session.chat_insights)
+    setCustomDashboard(session.custom_dashboard ?? null)
     setAiUsage(session.ai_usage)
     setAiSettings(session.ai_settings)
   }, [])
@@ -591,22 +602,23 @@ export default function DemoPage() {
     () => activeMessages.map(demoMessageToChatMessage),
     [activeMessages],
   )
+  const customDashboardInput = useMemo<DashboardSkillInput>(
+    () => ({
+      blocks: dashboardBlocks,
+      noteInsights: insights,
+      chatInsights,
+      chatMessages: demoChatMessages,
+      categories: categoryOptions,
+      noteVersionCreatedAtById: new Map(),
+    }),
+    [categoryOptions, chatInsights, dashboardBlocks, demoChatMessages, insights],
+  )
 
   const handleNameSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const trimmed = nameInput.trim()
     if (!trimmed) return
-    setName(trimmed)
-    setMessages((current) =>
-      current.length > 0
-        ? current
-        : [
-            makeMessage(
-              "assistant",
-              `hi ${trimmed}. start the timer, add a block, or tell me what happened in plain language.`,
-            ),
-          ],
-    )
+    applyDemoSession(createSeededDemoSession(trimmed))
   }
 
   const appendThreadMessage = (message: DemoStoredMessage, thread = activeThread) => {
@@ -677,7 +689,7 @@ export default function DemoPage() {
       hyperfocus_marker: base?.hyperfocus_marker ?? false,
       guilt_marker: base?.guilt_marker ?? false,
       novelty_marker: base?.novelty_marker ?? false,
-      agent_metadata: base?.agent_metadata ?? {},
+      agent_metadata: base ? userAuthoredDemoMetadata(base.agent_metadata) : {},
       created_at: base?.created_at ?? nowIso,
       updated_at: nowIso,
     }
@@ -737,7 +749,7 @@ export default function DemoPage() {
       hyperfocus_marker: editor.hyperfocusMarker,
       guilt_marker: editor.guiltMarker,
       novelty_marker: editor.noveltyMarker,
-      agent_metadata: editor.block?.agent_metadata ?? {},
+      agent_metadata: editor.block ? userAuthoredDemoMetadata(editor.block.agent_metadata) : {},
       created_at: editor.block?.created_at ?? nowIso,
       updated_at: nowIso,
     }
@@ -828,10 +840,12 @@ export default function DemoPage() {
     setPendingDraft(null)
     setInsights([])
     setChatInsights([])
+    setCustomDashboard(null)
     setAiUsage(createDemoAiUsage())
     setAiSettings(createDemoAiSettings())
     setCategories([...DEMO_DEFAULT_CATEGORIES])
     setActiveThread({ kind: "general" })
+    setDashboardView("overview")
     setEditor(null)
     setError(null)
   }
@@ -1104,7 +1118,7 @@ export default function DemoPage() {
                 value={nameInput}
                 onChange={(event) => setNameInput(event.target.value)}
                 className="alibi-input h-11"
-                placeholder="Mina"
+                placeholder="name for this local demo session"
                 autoFocus
               />
             </label>
@@ -1155,7 +1169,7 @@ export default function DemoPage() {
               href="/auth/sign-up?from=demo"
               className="alibi-button-primary inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs"
             >
-              create account and keep blocks
+              create account and keep your blocks
               <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.4} />
             </Link>
           </div>
@@ -1166,8 +1180,8 @@ export default function DemoPage() {
           {usingCustomAiEndpoint
             ? "Companion AI is using your custom endpoint."
             : "Companion AI is using the hosted demo configuration."}{" "}
-          After sign-up, the real app can import completed demo blocks, index account memory for
-          RAG, create custom dashboard views, and sync completed blocks to Google Calendar.
+          After sign-up, the real app can import your completed demo blocks, index account memory
+          for RAG, create custom dashboard views, and sync completed blocks to Google Calendar.
         </section>
 
         <section className="alibi-banner-info">
@@ -1227,15 +1241,55 @@ export default function DemoPage() {
         </div>
 
         {view === "dashboard" ? (
-          <DashboardOverview
-            blocks={dashboardBlocks}
-            insights={insights}
-            categories={categories}
-            emptyHref="/demo"
-            emptyAction="back to tracker"
-            chatInsights={chatInsights}
-            chatMessages={demoChatMessages}
-          />
+          <div className="space-y-4">
+            <div className="alibi-card flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:rounded-full sm:p-1.5 sm:pl-3">
+              <span className="shrink-0 px-2 text-xs font-black uppercase tracking-[0.12em] text-alibi-teal sm:px-0">
+                dashboard
+              </span>
+              <button
+                type="button"
+                onClick={() => setDashboardView("overview")}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-bold leading-tight transition",
+                  dashboardView === "overview"
+                    ? "bg-alibi-blue text-white"
+                    : "text-alibi-teal hover:-translate-y-0.5 hover:bg-alibi-teal hover:text-white",
+                )}
+              >
+                overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardView("custom")}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-bold leading-tight transition",
+                  dashboardView === "custom"
+                    ? "bg-alibi-blue text-white"
+                    : "text-alibi-teal hover:-translate-y-0.5 hover:bg-alibi-teal hover:text-white",
+                )}
+              >
+                custom
+              </button>
+            </div>
+
+            {dashboardView === "custom" ? (
+              <DemoCustomDashboard
+                input={customDashboardInput}
+                dashboard={customDashboard}
+                onCreate={setCustomDashboard}
+              />
+            ) : (
+              <DashboardOverview
+                blocks={dashboardBlocks}
+                insights={insights}
+                categories={categories}
+                emptyHref="/demo"
+                emptyAction="back to tracker"
+                chatInsights={chatInsights}
+                chatMessages={demoChatMessages}
+              />
+            )}
+          </div>
         ) : view === "calendar" ? (
           <CalendarView
             blocks={dashboardBlocks}
@@ -1347,8 +1401,8 @@ function DemoAiSettingsPanel({
             className="alibi-input h-11"
             placeholder={
               settings.provider === "anthropic"
-                ? "https://api.anthropic.com/v1"
-                : "https://api.openai.com/v1"
+                ? "optional Anthropic base URL"
+                : "optional OpenAI-compatible URL"
             }
           />
         </label>
@@ -1362,7 +1416,7 @@ function DemoAiSettingsPanel({
               value={settings.api_key}
               onChange={(event) => setSettings({ ...settings, api_key: event.target.value })}
               className="alibi-input h-11 pl-9"
-              placeholder={settings.provider === "anthropic" ? "sk-ant-..." : "sk-..."}
+              placeholder="optional provider key stored only in this browser"
               autoComplete="off"
             />
           </div>
@@ -1376,7 +1430,7 @@ function DemoAiSettingsPanel({
             value={settings.companion_model}
             onChange={(event) => setSettings({ ...settings, companion_model: event.target.value })}
             className="alibi-input h-11"
-            placeholder={settings.provider === "anthropic" ? "claude-sonnet-4-5" : "gpt-4o-mini"}
+            placeholder="optional model for chat and custom dashboard drafting"
           />
         </label>
 
@@ -1386,7 +1440,7 @@ function DemoAiSettingsPanel({
             value={settings.fast_model}
             onChange={(event) => setSettings({ ...settings, fast_model: event.target.value })}
             className="alibi-input h-11"
-            placeholder={settings.provider === "anthropic" ? "claude-3-5-haiku-latest" : "gpt-4o-mini"}
+            placeholder="optional faster model for routing and extraction"
           />
         </label>
       </div>

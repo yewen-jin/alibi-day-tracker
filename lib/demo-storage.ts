@@ -10,6 +10,7 @@ import { attachEvidenceSourceId } from "@/lib/evidence-claims"
 import type {
   ActiveTimer,
   CompanionMessageType,
+  DashboardViewRecord,
   EffortLevel,
   Mood,
   Satisfaction,
@@ -20,7 +21,7 @@ import type {
 } from "@/lib/types"
 
 export const DEMO_SESSION_STORAGE_KEY = "alibi_demo_session_v1"
-export const DEMO_SESSION_VERSION = 4
+export const DEMO_SESSION_VERSION = 5
 
 export const DEMO_DEFAULT_CATEGORIES = FALLBACK_CATEGORIES
 
@@ -68,7 +69,7 @@ export interface DemoAiSettings {
 }
 
 export interface DemoStoredSession {
-  version: 4
+  version: 5
   name: string
   active_timer: (ActiveTimer & { resumed_block?: DemoStoredBlock }) | null
   blocks: DemoStoredBlock[]
@@ -78,9 +79,15 @@ export interface DemoStoredSession {
   pending_draft: CompanionDraft | null
   insights: TimeBlockInsight[]
   chat_insights: CompanionMessageInsight[]
+  custom_dashboard: DemoStoredCustomDashboard | null
   ai_usage: DemoAiUsage
   ai_settings: DemoAiSettings
   updated_at: string
+}
+
+export interface DemoStoredCustomDashboard {
+  view: DashboardViewRecord
+  result: Record<string, unknown> | null
 }
 
 type LegacyDemoSession = {
@@ -91,6 +98,7 @@ type LegacyDemoSession = {
   messages?: Array<Partial<DemoStoredMessage>>
   block_threads?: Record<string, Array<Partial<DemoStoredMessage>>>
   chat_insights?: CompanionMessageInsight[]
+  custom_dashboard?: DemoStoredCustomDashboard | null
   ai_usage?: Partial<DemoAiUsage>
   ai_settings?: Partial<DemoAiSettings>
   updated_at?: string
@@ -279,6 +287,7 @@ function migrateSession(parsed: LegacyDemoSession): DemoStoredSession | null {
           evidence_claims: attachEvidenceSourceId(insight.evidence_claims ?? [], insight.message_id),
         }))
       : migratedChatInsights,
+    custom_dashboard: parsed.custom_dashboard ?? null,
     ai_usage: {
       ...createDemoAiUsage(),
       ...(parsed.ai_usage ?? {}),

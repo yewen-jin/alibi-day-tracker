@@ -8,6 +8,7 @@ import {
   type DemoStoredBlock,
   type DemoStoredSession,
 } from "@/lib/demo-storage";
+import { userAuthoredDemoMetadata } from "@/lib/demo-seed-data";
 import { defaultCategoryColor } from "@/lib/time-block-display";
 import type {
   ActiveTimer,
@@ -116,7 +117,7 @@ function blockFromSaveInput(input: SaveBlockInput, base?: DemoStoredBlock): Demo
     hyperfocus_marker: input.hyperfocus_marker ?? false,
     guilt_marker: input.guilt_marker ?? false,
     novelty_marker: input.novelty_marker ?? false,
-    agent_metadata: base?.agent_metadata ?? {},
+    agent_metadata: base ? userAuthoredDemoMetadata(base.agent_metadata) : {},
     created_at: base?.created_at ?? now,
     updated_at: now,
   };
@@ -173,6 +174,7 @@ export function saveDemoActiveTimerDetailsSession(
     hyperfocus_marker: input.hyperfocus_marker ?? false,
     guilt_marker: input.guilt_marker ?? false,
     novelty_marker: input.novelty_marker ?? false,
+    agent_metadata: userAuthoredDemoMetadata(base.agent_metadata),
     updated_at: new Date().toISOString(),
   };
   const nextSession = ensureCategory(
@@ -219,6 +221,7 @@ export function stopDemoTimerSession(
     hyperfocus_marker: input?.hyperfocus_marker ?? base.hyperfocus_marker,
     guilt_marker: input?.guilt_marker ?? base.guilt_marker,
     novelty_marker: input?.novelty_marker ?? base.novelty_marker,
+    agent_metadata: userAuthoredDemoMetadata(base.agent_metadata),
     updated_at: now,
   };
 
