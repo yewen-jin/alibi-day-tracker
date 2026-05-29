@@ -20,7 +20,7 @@ import {
   readDemoSession,
   type DemoStoredBlock,
 } from "@/lib/demo-storage";
-import { isDemoSeedBlock } from "@/lib/demo-seed-data";
+import { isSeededDemoBlock } from "@/lib/demo-seed-data";
 import type {
   ActiveTimer,
   CompanionThreadState,
@@ -66,7 +66,7 @@ export function TimerTrackerApp({
     const importableBlocks =
       demoSession?.blocks.filter(
         (block) =>
-          !isDemoSeedBlock(block) &&
+          !isSeededDemoBlock(block) &&
           block.ended_at &&
           block.task_name &&
           block.category,
@@ -220,6 +220,7 @@ export function TimerTrackerApp({
 
     for (const block of demoImportBlocks) {
       if (!block.ended_at || !block.task_name || !block.category) continue;
+      if (isSeededDemoBlock(block)) continue;
 
       const result = await saveBlock({
         task_name: block.task_name,

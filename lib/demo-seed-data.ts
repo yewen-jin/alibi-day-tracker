@@ -2,9 +2,8 @@ import {
   DEMO_DEFAULT_CATEGORIES,
   DEMO_SESSION_VERSION,
   createDemoAiSettings,
-  demoChatInsightForMessage,
-  demoDurationSeconds,
   makeDemoMessage,
+  upsertDemoChatInsight,
   upsertDemoInsight,
   type DemoStoredBlock,
   type DemoStoredMessage,
@@ -13,6 +12,7 @@ import {
 import { createDemoAiUsage } from "@/lib/demo-token-budget"
 import { defaultCategoryColor } from "@/lib/time-block-display"
 import type {
+  CompanionMessageInsight,
   EffortLevel,
   Mood,
   Satisfaction,
@@ -20,13 +20,25 @@ import type {
   TimeBlockInsight,
 } from "@/lib/types"
 
-export const DEMO_SEED_SOURCE = "icp_rolling_30_day_v1"
+const SEEDED_SOURCE = {
+  source: "demo_seed_icp",
+  demo_seed: true,
+}
 
-type SeedBlockTemplate = {
-  startHour: number
-  startMinute?: number
-  durationMinutes: number
-  category: string
+const CUSTOM_CATEGORIES = [
+  "part_time_job",
+  "client_work",
+  "art_practice",
+  "content",
+] as const
+
+type SeedCategory = typeof CUSTOM_CATEGORIES[number] | "admin" | "care" | "creative" | "deep_work" | "errands" | "rest" | "social"
+
+interface SeedBlockTemplate {
+  dayOffset: number
+  start: string
+  minutes: number
+  category: SeedCategory
   task: string
   hashtags: string[]
   notes: string
@@ -39,64 +51,25 @@ type SeedBlockTemplate = {
   novelty?: boolean
 }
 
-const CUSTOM_SEED_CATEGORIES = [
-  "part_time_job",
-  "client_work",
-  "art_practice",
-  "content",
-].map((slug) => ({
-  id: slug,
-  user_id: "demo",
-  slug,
-  name: slug.replace(/_/g, " "),
-  color: defaultCategoryColor(slug),
-  is_default: false,
-  created_at: "",
-  updated_at: "",
-})) satisfies TimeBlockCategoryRecord[]
-
-export function isDemoSeedBlock(block: { agent_metadata?: Record<string, unknown> }) {
-  return block.agent_metadata?.demo_seed === true
+function atDate(base: Date, dayOffset: number, time: string) {
+  const [hours, minutes] = time.split(":").map(Number)
+  const date = new Date(base)
+  date.setDate(base.getDate() + dayOffset)
+  date.setHours(hours, minutes, 0, 0)
+  return date
 }
 
-export function stripDemoSeedMetadata(metadata?: Record<string, unknown>) {
-  if (!metadata?.demo_seed) return metadata ?? {}
-
-  const { demo_seed: _demoSeed, seed_source: _seedSource, source, ...rest } = metadata
-  if (source && source !== "demo_seed") {
-    return { ...rest, source }
-  }
-  return rest
-}
-
-function localDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, "0")
-  const day = `${date.getDate()}`.padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function addMinutes(date: Date, minutes: number) {
-  return new Date(date.getTime() + minutes * 60_000)
-}
-
-function localTime(day: Date, hour: number, minute = 0) {
-  const value = new Date(day)
-  value.setHours(hour, minute, 0, 0)
-  return value
-}
-
-function seedBlock(day: Date, index: number, template: SeedBlockTemplate): DemoStoredBlock {
-  const startedAt = localTime(day, template.startHour, template.startMinute ?? 0)
-  const endedAt = addMinutes(startedAt, template.durationMinutes)
-  const now = addMinutes(endedAt, 6).toISOString()
+function blockFromTemplate(base: Date, index: number, template: SeedBlockTemplate): DemoStoredBlock {
+  const startedAt = atDate(base, template.dayOffset, template.start)
+  const endedAt = new Date(startedAt.getTime() + template.minutes * 60_000)
+  const now = new Date().toISOString()
 
   return {
-    id: `demo-seed-${localDateKey(day)}-${index}`,
+    id: `demo-seed-block-${String(index + 1).padStart(3, "0")}`,
     user_id: "demo",
     started_at: startedAt.toISOString(),
     ended_at: endedAt.toISOString(),
-    duration_seconds: demoDurationSeconds(startedAt.toISOString(), endedAt.toISOString()),
+    duration_seconds: template.minutes * 60,
     category_id: template.category,
     task_name: template.task,
     category: template.category,
@@ -109,311 +82,217 @@ function seedBlock(day: Date, index: number, template: SeedBlockTemplate): DemoS
     hyperfocus_marker: template.hyperfocus ?? false,
     guilt_marker: template.guilt ?? false,
     novelty_marker: template.novelty ?? false,
-    agent_metadata: {
-      demo_seed: true,
-      seed_source: DEMO_SEED_SOURCE,
-      source: "demo_seed",
-    },
-    created_at: now,
+    agent_metadata: SEEDED_SOURCE,
+    created_at: startedAt.toISOString(),
     updated_at: now,
   }
 }
 
-function templatesForDay(day: Date, offsetFromToday: number, anchorNow: Date): SeedBlockTemplate[] {
-  if (offsetFromToday === 0) {
-    const end = new Date(anchorNow.getTime() - 20 * 60_000)
-    if (localDateKey(end) !== localDateKey(day)) {
-      return []
-    }
-    const start = new Date(end.getTime() - 75 * 60_000)
-    if (localDateKey(start) !== localDateKey(day)) {
-      return []
-    }
-    const startHour = start.getHours()
-    const startMinute = start.getMinutes()
+function seededMessage(role: DemoStoredMessage["role"], text: string, createdAt: string): DemoStoredMessage {
+  return {
+    ...makeDemoMessage(role, text, { metadata: SEEDED_SOURCE }),
+    id: `demo-seed-${role}-${createdAt.slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`,
+    created_at: createdAt,
+  }
+}
 
-    return [
-      {
-        startHour,
-        startMinute,
-        durationMinutes: 75,
-        category: "content",
-        task: "rough cut captions for TikTok draft",
-        hashtags: ["tiktok", "content", "morning"],
-        notes:
-          "Started with low confidence, then the caption wording finally clicked. Stopped before polishing because I could feel the hyperfocus tunnel starting.",
+function categoryRecord(slug: string): TimeBlockCategoryRecord {
+  return {
+    id: slug,
+    user_id: "demo",
+    slug,
+    name: slug.replace(/_/g, " "),
+    color: defaultCategoryColor(slug),
+    is_default: false,
+    created_at: "",
+    updated_at: "",
+  }
+}
+
+function templates(): SeedBlockTemplate[] {
+  const items: SeedBlockTemplate[] = []
+  for (let offset = -29; offset <= 0; offset += 1) {
+    const weekday = atDate(new Date(), offset, "12:00").getDay()
+    const isPartTimeDay = weekday === 1 || weekday === 3 || weekday === 5
+    const isWeekend = weekday === 0 || weekday === 6
+
+    if (isPartTimeDay) {
+      items.push({
+        dayOffset: offset,
+        start: "09:30",
+        minutes: 270,
+        category: "part_time_job",
+        task: "studio desk shift",
+        hashtags: ["job", "income", "routine"],
+        notes: "Part-time shift. Useful external structure, but I arrived with five browser tabs in my head. Got the necessary admin queue done after a noisy first hour.",
         mood: "neutral",
         effort: "medium",
         satisfaction: "mixed",
-        hyperfocus: true,
-      },
-    ]
+      })
+      items.push({
+        dayOffset: offset,
+        start: "15:15",
+        minutes: 45,
+        category: "rest",
+        task: "post-shift decompression",
+        hashtags: ["reset", "transition"],
+        notes: "Sat on the sofa instead of pretending I could jump straight into client work. The buffer made the evening less brittle.",
+        mood: "flat",
+        effort: "easy",
+        satisfaction: "satisfied",
+      })
+    }
+
+    if (weekday === 2 || weekday === 4) {
+      items.push({
+        dayOffset: offset,
+        start: weekday === 2 ? "10:45" : "11:30",
+        minutes: weekday === 2 ? 95 : 75,
+        category: "client_work",
+        task: weekday === 2 ? "retainer edits for Iris" : "brand deck revisions",
+        hashtags: ["client", weekday === 2 ? "iris" : "deck"],
+        notes: weekday === 2
+          ? "Client edits took longer than expected because I kept polishing the first section. Hyperfocused once the brief felt visual instead of admin."
+          : "Moved the deck from messy to presentable. Started late after avoiding the email thread, then felt better once I made a tiny checklist.",
+        mood: weekday === 2 ? "proud" : "anxious",
+        effort: weekday === 2 ? "hard" : "medium",
+        satisfaction: "satisfied",
+        avoidance: weekday === 4,
+        hyperfocus: weekday === 2,
+      })
+      items.push({
+        dayOffset: offset,
+        start: "16:40",
+        minutes: 55,
+        category: "content",
+        task: "TikTok edit and captions",
+        hashtags: ["tiktok", "content", "visibility"],
+        notes: "Cut the talking-head clip down to something punchier. Captions made it easier to understand the point, but I spiralled on whether it was too much.",
+        mood: "anxious",
+        effort: "medium",
+        satisfaction: "mixed",
+        novelty: offset % 4 === 0,
+      })
+    }
+
+    if (!isPartTimeDay && !isWeekend) {
+      items.push({
+        dayOffset: offset,
+        start: "20:15",
+        minutes: 80,
+        category: "art_practice",
+        task: "painting study",
+        hashtags: ["art", "practice", "series"],
+        notes: "Personal work after paid work. Messy start, then the color test opened a new direction for the series. This felt like mine again.",
+        mood: "joyful",
+        effort: "medium",
+        satisfaction: "satisfied",
+        novelty: true,
+      })
+    }
+
+    if (weekday === 0 || weekday === 6) {
+      items.push({
+        dayOffset: offset,
+        start: "12:10",
+        minutes: weekday === 6 ? 120 : 70,
+        category: weekday === 6 ? "creative" : "care",
+        task: weekday === 6 ? "content batch filming" : "weekly reset and laundry",
+        hashtags: weekday === 6 ? ["tiktok", "batch", "studio"] : ["home", "reset"],
+        notes: weekday === 6
+          ? "Filmed three chaotic but usable clips. Energy was high and the room became a disaster zone, but batching kept me from overthinking each take."
+          : "Reset day. Laundry, food, inbox scan. I felt guilty that it was not art, but the week works better when this is not invisible.",
+        mood: weekday === 6 ? "joyful" : "guilty",
+        effort: weekday === 6 ? "hard" : "medium",
+        satisfaction: "mixed",
+        guilt: weekday === 0,
+        hyperfocus: weekday === 6,
+      })
+    }
+
+    if (offset % 5 === 0) {
+      items.push({
+        dayOffset: offset,
+        start: "18:05",
+        minutes: 35,
+        category: "admin",
+        task: "invoices and client replies",
+        hashtags: ["admin", "money", "email"],
+        notes: "Avoided invoices until they became louder than the actual work. Once I opened the spreadsheet it was only thirty minutes. Classic.",
+        mood: "guilty",
+        effort: "grind",
+        satisfaction: "mixed",
+        avoidance: true,
+        guilt: true,
+      })
+    }
   }
 
-  const weekday = day.getDay()
-  const templates: SeedBlockTemplate[] = []
-
-  if ([2, 3, 5].includes(weekday)) {
-    templates.push({
-      startHour: 9,
-      durationMinutes: 270,
-      category: "part_time_job",
-      task: "studio assistant shift",
-      hashtags: ["studio", "part_time", "routine"],
-      notes:
-        "External structure helped. The commute transition was bumpy, but once I was there the checklist carried me and reduced decision fatigue.",
-      mood: "neutral",
-      effort: "medium",
-      satisfaction: "satisfied",
-    })
-  }
-
-  if ([1, 4].includes(weekday)) {
-    templates.push({
-      startHour: 10,
-      startMinute: weekday === 1 ? 30 : 0,
-      durationMinutes: weekday === 1 ? 150 : 120,
-      category: "client_work",
-      task: weekday === 1 ? "client mural proposal revision" : "brand kit feedback pass",
-      hashtags: weekday === 1 ? ["client", "mural", "proposal"] : ["client", "brand", "feedback"],
-      notes:
-        weekday === 1
-          ? "Avoided opening the feedback for an hour, then did one energetic pass. The second half was clearer after I stopped trying to make it perfect."
-          : "Lots of context switching between email, files, and references. Felt guilty about the delay, but the actual work was smaller than the dread.",
-      mood: weekday === 1 ? "anxious" : "guilty",
-      effort: "hard",
-      satisfaction: "mixed",
-      avoidance: true,
-      guilt: true,
-    })
-  }
-
-  if ([0, 1, 4, 6].includes(weekday)) {
-    templates.push({
-      startHour: weekday === 6 ? 13 : 15,
-      startMinute: weekday === 0 ? 30 : 0,
-      durationMinutes: weekday === 6 ? 190 : 95,
-      category: "art_practice",
-      task: weekday === 6 ? "large canvas color study" : "sketchbook shape studies",
-      hashtags: ["art", "practice", weekday === 6 ? "canvas" : "sketchbook"],
-      notes:
-        weekday === 6
-          ? "Lost track of time in a good way. Messy table, strong color decisions, and a real satisfaction hit when the final layer stopped feeling precious."
-          : "Told myself it only had to be fifteen minutes. Novelty from the new brush pen made starting easier and the practice stretched naturally.",
-      mood: weekday === 6 ? "joyful" : "proud",
-      effort: weekday === 6 ? "hard" : "easy",
-      satisfaction: "satisfied",
-      hyperfocus: weekday === 6,
-      novelty: true,
-    })
-  }
-
-  if ([1, 3, 6].includes(weekday)) {
-    templates.push({
-      startHour: weekday === 3 ? 18 : 17,
-      startMinute: 30,
-      durationMinutes: weekday === 6 ? 80 : 60,
-      category: "content",
-      task: weekday === 3 ? "film process clips" : "edit and schedule TikTok",
-      hashtags: ["tiktok", "content", "art"],
-      notes:
-        "The filming setup created friction, but once the phone was mounted I moved quickly. Posting still brought a little vulnerability hangover.",
-      mood: "anxious",
-      effort: "medium",
-      satisfaction: "mixed",
-      avoidance: weekday === 3,
-    })
-  }
-
-  if ([0, 4].includes(weekday)) {
-    templates.push({
-      startHour: 11,
-      durationMinutes: 45,
-      category: "admin",
-      task: weekday === 0 ? "weekly money check" : "invoice and email sweep",
-      hashtags: ["admin", weekday === 0 ? "money" : "invoice"],
-      notes:
-        "Put it off until the discomfort was louder than the task. Used a timer and stopped after the useful pass instead of opening five new loops.",
-      mood: "guilty",
-      effort: "grind",
-      satisfaction: "mixed",
-      avoidance: true,
-      guilt: true,
-    })
-  }
-
-  if ([2, 5].includes(weekday)) {
-    templates.push({
-      startHour: 16,
-      durationMinutes: 50,
-      category: "errands",
-      task: weekday === 2 ? "post office and supply pickup" : "groceries plus pharmacy",
-      hashtags: ["errands", "outside"],
-      notes:
-        "Bundled the outside tasks after work so I did not have to restart from home. Tired but relieved that future-me has the supplies.",
-      mood: "flat",
-      effort: "medium",
-      satisfaction: "satisfied",
-    })
-  }
-
-  if ([0, 3, 6].includes(weekday)) {
-    templates.push({
-      startHour: weekday === 0 ? 19 : 20,
-      durationMinutes: weekday === 6 ? 120 : 75,
-      category: weekday === 3 ? "care" : "rest",
-      task: weekday === 3 ? "laundry reset and dinner" : "recovery walk and low-stim evening",
-      hashtags: weekday === 3 ? ["care", "home"] : ["rest", "recovery"],
-      notes:
-        "This looked unproductive on paper, but it lowered the noise. The transition into rest was awkward and then my brain finally unclenched.",
-      mood: "neutral",
-      effort: "easy",
-      satisfaction: "satisfied",
-    })
-  }
-
-  return templates
+  return items
 }
 
-function messageAt(
-  text: string,
-  createdAt: Date,
-  role: DemoStoredMessage["role"] = "assistant",
-  relatedTimeBlockId: string | null = null,
-) {
-  return {
-    ...makeDemoMessage(role, text, {
-      related_time_block_id: relatedTimeBlockId,
-      metadata: { seed_source: DEMO_SEED_SOURCE },
-    }),
-    id: `demo-seed-${role}-${createdAt.getTime()}`,
-    created_at: createdAt.toISOString(),
-  }
-}
-
-export function createSeededDemoSession(name: string, now = new Date()): DemoStoredSession {
-  const blocks: DemoStoredBlock[] = []
-
-  for (let offset = -29; offset <= 0; offset += 1) {
-    const day = new Date(now)
-    day.setDate(now.getDate() + offset)
-    day.setHours(0, 0, 0, 0)
-
-    templatesForDay(day, offset, now).forEach((template, index) => {
-      blocks.push(seedBlock(day, index + 1, template))
-    })
-  }
-
-  const sortedBlocks = blocks.sort(
-    (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
-  )
-  const recentClientBlock = sortedBlocks.find((block) => block.category === "client_work")
-  const recentArtBlock = sortedBlocks.find((block) => block.category === "art_practice")
-  const recentAdminBlock = sortedBlocks.find((block) => block.category === "admin")
+export function createSeededDemoSession(name: string): DemoStoredSession {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const blocks = templates()
+    .map((template, index) => blockFromTemplate(today, index, template))
+    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+  const firstMessageDate = atDate(today, -26, "21:30").toISOString()
   const messages = [
-    messageAt(
-      `hi ${name}. i loaded a seeded month so the dashboard and calendar already have texture. add or edit anything real; seeded blocks stay out of account import.`,
-      addMinutes(now, -28 * 60),
+    seededMessage(
+      "assistant",
+      `hi ${name}. i loaded a messy creative month so the demo has something to reflect back. add your own blocks if you want to import them later.`,
+      atDate(today, -29, "08:45").toISOString(),
     ),
-    messageAt(
-      "I keep meaning to do invoices before client work, but I avoid the admin tab and then feel behind even on days I did a lot.",
-      addMinutes(now, -26 * 60),
+    seededMessage(
       "user",
+      "i keep losing the handoff between job days and my own art. show me what actually happens there.",
+      firstMessageDate,
     ),
-    messageAt(
-      "The clearest pattern so far: outside structure helps on studio days, while admin needs a smaller doorway and a timer.",
-      addMinutes(now, -22 * 60),
+    seededMessage(
+      "assistant",
+      "the seeded record suggests the shift itself gives structure, but the transition afterward needs a decompression block before client or art work becomes realistic.",
+      atDate(today, -26, "21:31").toISOString(),
     ),
-    messageAt(
-      "The TikTok edits are useful drift: I start by procrastinating on captions, then accidentally make a solid process clip.",
-      addMinutes(now, -9 * 60),
+    seededMessage(
       "user",
-    ),
-    messageAt(
-      "Yesterday had the best creative payoff after a low-pressure start. The note says novelty helped more than discipline.",
-      addMinutes(now, -4 * 60),
+      "notice when admin turns into guilt instead of just being a task.",
+      atDate(today, -13, "18:45").toISOString(),
     ),
   ]
-
-  const blockThreads: Record<string, DemoStoredMessage[]> = {}
-
-  if (recentClientBlock) {
-    blockThreads[recentClientBlock.id] = [
-      messageAt(
-        "Can you help me see why this client block felt so heavy when it was only a couple of hours?",
-        addMinutes(new Date(recentClientBlock.updated_at), 2),
-        "user",
-        recentClientBlock.id,
-      ),
-      messageAt(
-        "This client block has both avoidance and relief signals. The useful detail is that the dread was bigger than the work.",
-        addMinutes(new Date(recentClientBlock.updated_at), 4),
-        "assistant",
-        recentClientBlock.id,
-      ),
-    ]
-  }
-
-  if (recentArtBlock) {
-    blockThreads[recentArtBlock.id] = [
-      messageAt(
-        "This one actually felt like proof that starting tiny works. I did not plan to stay with it that long.",
-        addMinutes(new Date(recentArtBlock.updated_at), 2),
-        "user",
-        recentArtBlock.id,
-      ),
-      messageAt(
-        "This looks like a good model for starting art practice: make the first step tiny, then let momentum decide whether it expands.",
-        addMinutes(new Date(recentArtBlock.updated_at), 4),
-        "assistant",
-        recentArtBlock.id,
-      ),
-    ]
-  }
-
-  if (recentAdminBlock) {
-    blockThreads[recentAdminBlock.id] = [
-      messageAt(
-        "I avoided this until it was embarrassing, then the timer made it smaller.",
-        addMinutes(new Date(recentAdminBlock.updated_at), 2),
-        "user",
-        recentAdminBlock.id,
-      ),
-      messageAt(
-        "The admin note is worth keeping unsmoothed. It shows the task became possible only after the scope was capped.",
-        addMinutes(new Date(recentAdminBlock.updated_at), 4),
-        "assistant",
-        recentAdminBlock.id,
-      ),
-    ]
-  }
-
-  const chatInsightMessages = [
-    ...messages.map((message) => ({ message, scope: "general" as const })),
-    ...Object.values(blockThreads).flatMap((thread) =>
-      thread.map((message) => ({ message, scope: "time_block" as const })),
-    ),
-  ].filter(({ message }) => message.role === "user")
+  const insights = blocks.reduce<TimeBlockInsight[]>(
+    (current, block) => upsertDemoInsight(current, block),
+    [],
+  )
+  const chatInsights = messages.reduce<CompanionMessageInsight[]>(
+    (current, message) => upsertDemoChatInsight(current, message, "general"),
+    [],
+  )
 
   return {
     version: DEMO_SESSION_VERSION,
     name,
     active_timer: null,
-    blocks: sortedBlocks,
-    categories: [...DEMO_DEFAULT_CATEGORIES, ...CUSTOM_SEED_CATEGORIES],
+    blocks,
+    categories: [...DEMO_DEFAULT_CATEGORIES, ...CUSTOM_CATEGORIES.map(categoryRecord)],
     messages,
-    block_threads: blockThreads,
+    block_threads: {},
     pending_draft: null,
-    insights: sortedBlocks.reduce<TimeBlockInsight[]>(
-      (current, block) => upsertDemoInsight(current, block),
-      [],
-    ),
-    chat_insights: chatInsightMessages.flatMap(({ message, scope }) => {
-      const insight = demoChatInsightForMessage(message, scope)
-      return insight ? [insight] : []
-    }),
+    insights,
+    chat_insights: chatInsights,
+    custom_dashboard: null,
     ai_usage: createDemoAiUsage(),
     ai_settings: createDemoAiSettings(),
-    updated_at: now.toISOString(),
+    updated_at: new Date().toISOString(),
   }
+}
+
+export function isSeededDemoBlock(block: Pick<DemoStoredBlock, "agent_metadata">) {
+  return block.agent_metadata?.demo_seed === true
+}
+
+export function userAuthoredDemoMetadata(metadata: Record<string, unknown> | undefined) {
+  if (!metadata?.demo_seed) return metadata ?? {}
+  const { demo_seed: _demoSeed, source: _source, ...rest } = metadata
+  return rest
 }

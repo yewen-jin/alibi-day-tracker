@@ -390,7 +390,7 @@ export function CompanionChatPanel({
           }}
           rows={2}
           disabled={pending}
-          placeholder="what happened, when, how long, blockers, mood, and what you want logged"
+          placeholder="describe what happened, when, duration, blockers, mood, or what to log/analyze"
           className="alibi-input block min-h-11 w-full resize-none py-2 leading-6 placeholder:text-alibi-teal/60 disabled:opacity-55"
         />
         <div className="flex items-center justify-end gap-2">
@@ -593,7 +593,7 @@ export function BlockEditor({
               setEditor({ ...editor, taskName: event.target.value })
             }
             className="alibi-input h-11"
-            placeholder="concrete activity name"
+            placeholder="specific activity name: client deck edits, invoice batch, TikTok captions"
           />
         </label>
 
@@ -645,7 +645,7 @@ export function BlockEditor({
               setEditor({ ...editor, hashtags: event.target.value })
             }
             className="alibi-input h-11"
-            placeholder="client, project, context"
+            placeholder="project, client, context, energy, platform"
           />
         </label>
 
@@ -657,7 +657,7 @@ export function BlockEditor({
               setEditor({ ...editor, notes: event.target.value })
             }
             className="alibi-input min-h-24 resize-y py-2"
-            placeholder="what happened, friction, feeling, outcome, surprise, remember"
+            placeholder="what happened, what got in the way, how it felt, what changed, and what alibi should remember"
           />
         </label>
 
