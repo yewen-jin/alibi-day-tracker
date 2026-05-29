@@ -31,6 +31,7 @@ import {
   type DemoStoredSession,
   type DemoAiSettings,
 } from "@/lib/demo-storage"
+import { createSeededDemoSession, stripDemoSeedMetadata } from "@/lib/demo-seed-data"
 import { generateDemoBlockInsight, processDemoCompanionMessage } from "@/app/actions/demo"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import { CalendarView } from "@/components/dashboard/calendar-view"
@@ -326,7 +327,7 @@ function createBlockFromOperation({
     hyperfocus_marker: base?.hyperfocus_marker ?? false,
     guilt_marker: base?.guilt_marker ?? false,
     novelty_marker: base?.novelty_marker ?? false,
-    agent_metadata: base?.agent_metadata ?? { source: "demo_companion" },
+    agent_metadata: base ? stripDemoSeedMetadata(base.agent_metadata) : { source: "demo_companion" },
     created_at: base?.created_at ?? now,
     updated_at: now,
   }
@@ -596,17 +597,7 @@ export default function DemoPage() {
     event.preventDefault()
     const trimmed = nameInput.trim()
     if (!trimmed) return
-    setName(trimmed)
-    setMessages((current) =>
-      current.length > 0
-        ? current
-        : [
-            makeMessage(
-              "assistant",
-              `hi ${trimmed}. start the timer, add a block, or tell me what happened in plain language.`,
-            ),
-          ],
-    )
+    applyDemoSession(createSeededDemoSession(trimmed))
   }
 
   const appendThreadMessage = (message: DemoStoredMessage, thread = activeThread) => {
@@ -677,7 +668,7 @@ export default function DemoPage() {
       hyperfocus_marker: base?.hyperfocus_marker ?? false,
       guilt_marker: base?.guilt_marker ?? false,
       novelty_marker: base?.novelty_marker ?? false,
-      agent_metadata: base?.agent_metadata ?? {},
+      agent_metadata: base ? stripDemoSeedMetadata(base.agent_metadata) : {},
       created_at: base?.created_at ?? nowIso,
       updated_at: nowIso,
     }
@@ -737,7 +728,7 @@ export default function DemoPage() {
       hyperfocus_marker: editor.hyperfocusMarker,
       guilt_marker: editor.guiltMarker,
       novelty_marker: editor.noveltyMarker,
-      agent_metadata: editor.block?.agent_metadata ?? {},
+      agent_metadata: editor.block ? stripDemoSeedMetadata(editor.block.agent_metadata) : {},
       created_at: editor.block?.created_at ?? nowIso,
       updated_at: nowIso,
     }
@@ -1155,7 +1146,7 @@ export default function DemoPage() {
               href="/auth/sign-up?from=demo"
               className="alibi-button-primary inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs"
             >
-              create account and keep blocks
+              create account and keep your blocks
               <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.4} />
             </Link>
           </div>
@@ -1166,8 +1157,8 @@ export default function DemoPage() {
           {usingCustomAiEndpoint
             ? "Companion AI is using your custom endpoint."
             : "Companion AI is using the hosted demo configuration."}{" "}
-          After sign-up, the real app can import completed demo blocks, index account memory for
-          RAG, create custom dashboard views, and sync completed blocks to Google Calendar.
+          After sign-up, the real app can import your completed demo blocks, index account memory
+          for RAG, create custom dashboard views, and sync completed blocks to Google Calendar.
         </section>
 
         <section className="alibi-banner-info">
@@ -1347,8 +1338,8 @@ function DemoAiSettingsPanel({
             className="alibi-input h-11"
             placeholder={
               settings.provider === "anthropic"
-                ? "https://api.anthropic.com/v1"
-                : "https://api.openai.com/v1"
+                ? "optional Anthropic base URL"
+                : "optional OpenAI-compatible URL"
             }
           />
         </label>
@@ -1362,7 +1353,7 @@ function DemoAiSettingsPanel({
               value={settings.api_key}
               onChange={(event) => setSettings({ ...settings, api_key: event.target.value })}
               className="alibi-input h-11 pl-9"
-              placeholder={settings.provider === "anthropic" ? "sk-ant-..." : "sk-..."}
+              placeholder="optional key for this browser"
               autoComplete="off"
             />
           </div>
@@ -1376,7 +1367,7 @@ function DemoAiSettingsPanel({
             value={settings.companion_model}
             onChange={(event) => setSettings({ ...settings, companion_model: event.target.value })}
             className="alibi-input h-11"
-            placeholder={settings.provider === "anthropic" ? "claude-sonnet-4-5" : "gpt-4o-mini"}
+            placeholder="optional companion model"
           />
         </label>
 
@@ -1386,7 +1377,7 @@ function DemoAiSettingsPanel({
             value={settings.fast_model}
             onChange={(event) => setSettings({ ...settings, fast_model: event.target.value })}
             className="alibi-input h-11"
-            placeholder={settings.provider === "anthropic" ? "claude-3-5-haiku-latest" : "gpt-4o-mini"}
+            placeholder="optional routing model"
           />
         </label>
       </div>

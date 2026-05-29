@@ -545,7 +545,7 @@ function ActiveTimerDetailsEditor({
             value={editor.taskName}
             onChange={(event) => setEditor({ ...editor, taskName: event.target.value })}
             className="alibi-input h-11"
-            placeholder="what is running?"
+            placeholder="concrete activity name"
           />
         </label>
         <label className="grid gap-1.5 text-sm font-bold text-alibi-blue">
@@ -569,7 +569,7 @@ function ActiveTimerDetailsEditor({
           value={editor.hashtags}
           onChange={(event) => setEditor({ ...editor, hashtags: event.target.value })}
           className="alibi-input h-10"
-          placeholder="client, writing, reset"
+          placeholder="client, project, context"
         />
       </label>
 
@@ -579,7 +579,7 @@ function ActiveTimerDetailsEditor({
           value={editor.notes}
           onChange={(event) => setEditor({ ...editor, notes: event.target.value })}
           className="alibi-input min-h-20 resize-y py-2"
-          placeholder="capture the shape of this block while it is still running"
+          placeholder="what happened, friction, feeling, outcome, remember"
         />
       </label>
 
